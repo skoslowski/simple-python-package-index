@@ -1,0 +1,42 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[project]
+authors = [
+  {name = "Sebastian Koslowski", email = "s.koslowski@procitec.de"},
+]
+dependencies = [
+  "fastapi >= 0.70.0",
+  "pydantic_settings",
+  "airium",
+  "natsort",
+  "packaging",
+  "furl",
+  "python-multipart >= 0.0.5",
+  "uvicorn[standard] >= 0.15.0",
+
+  "litestar"
+]
+description = 'Simple PEP503 index for python packages'
+dynamic = ["version"]
+license = "MIT"
+name = "simple-python-package-index"
+requires-python = ">=3.11"
+readme = "README.md"
+
+[tool.hatch]
+version.path = "src/simple_python_package_index/__init__.py"
+build.sources = ["src"]
+
+
+[tool.black]
+line-length = 100
+
+[tool.ruff] # https://docs.astral.sh/ruff/rules/
+extend-select = [
+  "I", # isort
+  "UP", # pyupgrade
+  "PT", # flake8-pytest-style
+]
+line-length = 110
