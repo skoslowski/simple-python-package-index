@@ -3,39 +3,26 @@ build-backend = "hatchling.build"
 requires = ["hatchling"]
 
 [project]
-authors = [
-  {name = "Sebastian Koslowski", email = "s.koslowski@procitec.de"},
-]
+authors = [{ name = "Sebastian Koslowski", email = "s.koslowski@procitec.de" }]
 dependencies = [
-  "fastapi >= 0.70.0",
-  "pydantic_settings",
-  "airium",
+  "litestar[standard]",
   "natsort",
+  "msgspec",
   "packaging",
-  "furl",
-  "python-multipart >= 0.0.5",
-  "uvicorn[standard] >= 0.15.0",
-
-  "litestar"
 ]
-description = 'Simple PEP503 index for python packages'
-dynamic = ["version"]
+description = 'Simple Python Package Index Server'
+version = "0.1.0"
 license = "MIT"
-name = "simple-python-package-index"
-requires-python = ">=3.11"
+name = "sppi-server"
+requires-python = ">=3.12"
 readme = "README.md"
 
 [tool.hatch]
 build.sources = ["src"]
-version.path = "src/simple_python_package_index/__init__.py"
 
-
-[tool.black]
-line-length = 100
-
-[tool.ruff] # https://docs.astral.sh/ruff/rules/
+[tool.ruff]
 extend-select = [
-  "I", # isort
+  "I",  # isort
   "UP", # pyupgrade
   "PT", # flake8-pytest-style
 ]
