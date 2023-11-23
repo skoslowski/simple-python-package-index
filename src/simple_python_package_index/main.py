@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -26,7 +27,6 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-app = FastAPI(name=__package__, version=__version__, root_path=settings.root_path)
 logger = logging.getLogger(__name__)
 
 index_data = loader.SimpleIndexCollection(
@@ -35,8 +35,8 @@ index_data = loader.SimpleIndexCollection(
 )
 
 
-@app.on_event("startup")
-def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("%(levelname)s:     %(message)s"))
     logger.addHandler(handler)
@@ -51,6 +51,15 @@ def startup_event():
         logger.info(
             f"{name} with {len(index.projects)} projects and {len(index.metadata)} distributions"
         )
+
+    yield
+
+app = FastAPI(
+    name=__package__,
+    version=__version__,
+    root_path=settings.root_path,
+    lifespan=lifespan,
+)
 
 
 class PyPISimpleV1JSONResponse(JSONResponse):
