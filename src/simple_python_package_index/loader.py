@@ -164,3 +164,9 @@ def _get_sdist_metadata(file: Path) -> bytes:
         assert pkg_info
         with pkg_info as fp:
             return fp.read()
+
+def open_metadata(file: Path) -> bytes | None:
+    if file.suffix == ".whl":
+        return _get_wheel_metadata(file)
+    if file.suffixes[-2:] == [".tar", ".gz"]:
+        return _get_sdist_metadata(file)

@@ -108,7 +108,7 @@ def get_path(file: Path) -> Path | None:
         return file_on_disk
 
 
-@get(settings.files_url + "/{file:path}")
+@get("/{file:path}")
 async def files(request: Request, file: Path, index_tree: loader.SimpleIndexTree) -> Response:
     if file.suffix == ".metadata" and (content := index_tree.meta_data(request.url.path)):
         return Response(content, headers={"Content-Disposition": f"attachment; filename={file.name}"})
@@ -149,6 +149,7 @@ def main() -> Litestar:
         dependencies={"index_tree": provide(index_tree)},
         debug=True,
     )
+    app.register(Router(settings.files_url, route_handlers=[files]))
 
     for name, index_ in sorted(index_tree.indexes()):
         logger.info((f"Index '{name}'" if name else "Root index") + f" with {len(index_.projects)} projects")

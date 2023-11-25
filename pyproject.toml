@@ -7,15 +7,11 @@ authors = [
   {name = "Sebastian Koslowski", email = "s.koslowski@procitec.de"},
 ]
 dependencies = [
-  "fastapi >= 0.70.0",
   "pydantic_settings",
   "airium",
   "natsort",
   "packaging",
   "furl",
-  "python-multipart >= 0.0.5",
-  "uvicorn[standard] >= 0.15.0",
-
   "litestar[standard]",
   "msgspec"
 ]
