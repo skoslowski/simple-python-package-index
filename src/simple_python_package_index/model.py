@@ -1,23 +1,20 @@
 from typing import Annotated
 
+from msgspec import Meta as M
+from msgspec import Struct
 from packaging.utils import NormalizedName
-from pydantic import BaseModel, Field
 
 # https://peps.python.org/pep-0508/#names
-ProjectName = Annotated[
-    str, Field(pattern=r"^([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])$")
-]
-NormalizedProjectName = Annotated[
-    NormalizedName, Field(pattern=r"^([0-9a-z]+-)*[0-9a-z]+$")
-]
+ProjectName = Annotated[str, M(pattern=r"^([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])$")]
+NormalizedProjectName = Annotated[NormalizedName, M(pattern=r"^([0-9a-z]+-)*[0-9a-z]+$")]
 
 
-class Meta(BaseModel):
+class Meta(Struct, frozen=True):
     # api_version: str = "1.0"  # PEP-629
     api_version: str = "1.1"  # PEP-700
 
 
-class File(BaseModel):
+class File(Struct, omit_defaults=True):
     # PEP-503
     filename: str
     # PEP-700
@@ -32,15 +29,12 @@ class File(BaseModel):
     # PEP-658
     dist_info_metadata: dict[str, str] | None = None
 
-    # internal use
-    version_: str = Field(exclude=True)
-
     def __hash__(self) -> int:
         return hash(self.filename)
 
 
 # Simple Detail page (/simple/$PROJECT/)
-class Details(BaseModel):
+class Details(Struct, kw_only=True):
     # PEP-629
     meta: Meta = Meta()
 
@@ -57,7 +51,7 @@ class Details(BaseModel):
         return hash(self.name)
 
 
-class Project(BaseModel):
+class Project(Struct):
     # PEP-691
     name: ProjectName  # may be normalized
 
@@ -66,7 +60,7 @@ class Project(BaseModel):
 
 
 # Simple Index page (/simple/)
-class Index(BaseModel):
+class Index(Struct):
     # PEP-629
     meta: Meta = Meta()
     # PEP-503

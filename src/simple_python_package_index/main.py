@@ -63,19 +63,16 @@ class SimpleIndexView(Controller):
 
     @get("/", sync_to_thread=False)
     def index(self, request: Request, simple_index: loader.SimpleIndex) -> Response[loader.Index | str]:
-        match get_response_type(request):
+        media_type = get_response_type(request)
+        match media_type:
             case PPSMediaType.JSON_V1:
-                return PyPISimpleResponse(
-                    content=simple_index.index,
-                    media_type=PPSMediaType.JSON_V1,
-                )
+                content = simple_index.index
             case PPSMediaType.HTML_V1:
-                return PyPISimpleResponse(
-                    content=str(html.generate_index(simple_index.index, request.url.path)),
-                    media_type=PPSMediaType.HTML_V1,
-                )
+                content = str(html.generate_index(simple_index.index, request.url.path))
+            case _:
+                return Response("No acceptable format found", status_code=406)
 
-        return Response("No acceptable format found", status_code=406)
+        return PyPISimpleResponse(content=content, media_type=media_type)
 
     @get("{project_name:str}/", sync_to_thread=False)
     def project_detail(
@@ -83,29 +80,23 @@ class SimpleIndexView(Controller):
     ) -> Response[loader.Details | str]:
         name = canonicalize_name(project_name)
         if name != project_name:
-            return Redirect(
-                path=request.url.path.replace(project_name, name),
-                status_code=301,
-            )
+            return Redirect(path=request.url.path.replace(project_name, name), status_code=301)
 
         try:
             project_details = simple_index[name]
         except KeyError:
             return Response("Project can not be found", status_code=404)
 
-        match get_response_type(request):
+        media_type = get_response_type(request)
+        match media_type:
             case PPSMediaType.JSON_V1:
-                return PyPISimpleResponse(
-                    content=project_details,
-                    media_type=PPSMediaType.JSON_V1,
-                )
+                content = project_details
             case PPSMediaType.HTML_V1:
-                return PyPISimpleResponse(
-                    content=str(html.generate_project_page(project_details)),
-                    media_type=PPSMediaType.HTML_V1,
-                )
+                content = str(html.generate_project_page(project_details))
+            case _:
+                return Response("No acceptable format found", status_code=406)
 
-        return Response("No acceptable format found", status_code=406)
+        return PyPISimpleResponse(content=content, media_type=media_type)
 
 
 def get_path(file: Path) -> Path | None:
@@ -118,8 +109,8 @@ def get_path(file: Path) -> Path | None:
 
 
 @get(settings.files_url + "/{file:path}")
-async def files(request: Request, file: Path, index_data: loader.SimpleIndexCollection) -> Response:
-    if file.suffix == ".metadata" and (content := index_data.get_meta_data(request.url.path)):
+async def files(request: Request, file: Path, index_tree: loader.SimpleIndexTree) -> Response:
+    if file.suffix == ".metadata" and (content := index_tree.meta_data(request.url.path)):
         return Response(content, headers={"Content-Disposition": f"attachment; filename={file.name}"})
     elif (filepath := get_path(file)) and filepath.is_file():
         return File(filepath)
@@ -147,24 +138,23 @@ def main() -> Litestar:
     logger.info("Wheels files are searched in %s", settings.files_dir)
     logger.info("Root path is %s", settings.root_path)
 
-    index_data = loader.SimpleIndexCollection(
+    index_tree = loader.SimpleIndexTree(
         data_dir=settings.files_dir,
         url=str(furl(settings.root_path) / settings.files_url),
     )
-    index_data.reload()
+    index_tree.reload()
 
     app = Litestar(
         route_handlers=[ping, files],
-        dependencies={"index_data": provide(index_data)},
+        dependencies={"index_tree": provide(index_tree)},
         debug=True,
     )
 
-    for name, index_ in sorted(index_data.indexes()):
-        name_ = f"Index '{name}'" if name else "Root index"
-        logger.info(f"{name_} with {len(index_.projects)} projects and {len(index_.metadata)} distributions")
+    for name, index_ in sorted(index_tree.indexes()):
+        logger.info((f"Index '{name}'" if name else "Root index") + f" with {len(index_.projects)} projects")
 
         router = Router(
-            name,
+            name if name != "." else "",
             route_handlers=[SimpleIndexView],
             dependencies={"simple_index": provide(index_)},
         )
