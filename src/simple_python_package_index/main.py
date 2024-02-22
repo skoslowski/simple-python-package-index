@@ -111,7 +111,7 @@ def get_path(file: Path) -> Path | None:
 @get("/{file:path}")
 async def files(request: Request, file: Path, index_tree: loader.SimpleIndexTree) -> Response:
     if file.suffix == ".metadata" and (content := index_tree.meta_data(request.url.path)):
-        return Response(content, headers={"Content-Disposition": f"attachment; filename={file.name}"})
+        return Response(content, media_type="binary/octet-stream")
     elif (filepath := get_path(file)) and filepath.is_file():
         return File(filepath)
 
