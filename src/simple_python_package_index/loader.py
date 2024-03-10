@@ -57,7 +57,7 @@ class FileExt:
             url=str(base_url / file.relative_to(base).as_posix()),
             hashes=_get_file_hashes(file),
             requires_python=metadata.get("requires_python"),
-            dist_info_metadata={"sha256": hashlib.sha256(metadata_content).hexdigest()},
+            core_metadata={"sha256": hashlib.sha256(metadata_content).hexdigest()},
         )
         return cls(
             project_name=canonicalize_name(metadata.get("name", name_from_file)),

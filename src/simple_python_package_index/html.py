@@ -56,11 +56,9 @@ def generate_project_page(project: "ProjectDetail") -> Airium:
                 if dist.yanked is not None:
                     kwargs["data-yanked"] = escape(dist.yanked)
 
-                if dist.dist_info_metadata:
-                    hash_name, hex_digest = next(iter(dist.dist_info_metadata.items()))
-                    kwargs["data-dist-info-metadata"] = f"{hash_name}={hex_digest}"
-                elif dist.dist_info_metadata is not None:
-                    kwargs["data-dist-info-metadata"] = "true"
+                if dist.core_metadata:
+                    hash_name, hex_digest = next(iter(dist.core_metadata.items()))
+                    kwargs["data-core-metadata"] = f"{hash_name}={hex_digest}"
 
                 with page.a(**kwargs):
                     page(dist.filename)

@@ -33,8 +33,8 @@ class ProjectFile(Struct, omit_defaults=True):
     requires_python: str | None = None
     # PEP-592
     yanked: str | None = None
-    # PEP-658
-    dist_info_metadata: dict[str, str] | None = None
+    # PEP-658, renamed from dist_info_metadata in PEP-714
+    core_metadata: dict[str, str] | None = None
 
     def __hash__(self) -> int:
         return hash(self.filename)
