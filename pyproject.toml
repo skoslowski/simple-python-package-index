@@ -15,7 +15,7 @@ dependencies = [
   "msgspec"
 ]
 description = 'Simple PEP503 index for python packages'
-dynamic = ["version"]
+version="0.1.0"
 license = "MIT"
 name = "simple-python-package-index"
 requires-python = ">=3.12"

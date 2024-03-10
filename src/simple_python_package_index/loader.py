@@ -108,12 +108,8 @@ class SimpleIndexTree:
                 logger.error(e)
                 continue
 
-            collections = (
-                name
-                for c in entry.relative_to(self.data_dir).parents
-                if _check_collection_name(name := c.as_posix())
-            )
-            for collection in collections:
+            parents = (c.as_posix() for c in entry.relative_to(self.data_dir).parents[-3:])
+            for collection in (c for c in parents if _check_collection_name(c)):
                 indexes[collection].add_distribution(file)
 
             self._metadata[f"{file.distribution.url}.metadata"] = file.metadata
