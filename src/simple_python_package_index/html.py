@@ -8,10 +8,10 @@ from natsort import natsorted
 from . import __version__
 
 if TYPE_CHECKING:
-    from .model import Details, Index, Meta
+    from .model import Meta, ProjectDetail, ProjectList
 
 
-def generate_index(index: "Index", url: str = "") -> Airium:
+def generate_index(index: "ProjectList", url: str = "") -> Airium:
     project_base = furl(url)
     page = Airium()
     page("<!DOCTYPE html>")
@@ -31,7 +31,7 @@ def generate_index(index: "Index", url: str = "") -> Airium:
     return page
 
 
-def generate_project_page(project: "Details") -> Airium:
+def generate_project_page(project: "ProjectDetail") -> Airium:
     page = Airium()
 
     page("<!DOCTYPE html>")

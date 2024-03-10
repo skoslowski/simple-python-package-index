@@ -1,3 +1,8 @@
+"""
+Model for Simple Index data
+
+https://packaging.python.org/en/latest/specifications/simple-repository-api/
+"""
 from typing import Annotated
 
 from msgspec import Meta as M
@@ -14,15 +19,17 @@ class Meta(Struct, frozen=True):
     api_version: str = "1.1"  # PEP-700
 
 
-class File(Struct, omit_defaults=True):
+class ProjectFile(Struct, omit_defaults=True):
     # PEP-503
     filename: str
     # PEP-700
     size: int
+    # PEP-503
     url: str  # HttpUrl
     # Limited to a len() of 1 in HTML
     hashes: dict[str, str]
     gpg_sig: bool | None = None
+    # PEP-503 (updated)
     requires_python: str | None = None
     # PEP-592
     yanked: str | None = None
@@ -33,25 +40,22 @@ class File(Struct, omit_defaults=True):
         return hash(self.filename)
 
 
-# Simple Detail page (/simple/$PROJECT/)
-class Details(Struct, kw_only=True):
+class ProjectDetail(Struct, kw_only=True):
+    """details on project - /simple/$NORM_NAME/"""
     # PEP-629
     meta: Meta = Meta()
-
     # PEP-691
     name: NormalizedProjectName
-
     # PEP-700
     versions: set[str] = set()
-
     # PEP-503
-    files: set[File] = set()
+    files: set[ProjectFile] = set()
 
     def __hash__(self) -> int:
         return hash(self.name)
 
 
-class Project(Struct):
+class ProjectListEntry(Struct):
     # PEP-691
     name: ProjectName  # may be normalized
 
@@ -59,9 +63,9 @@ class Project(Struct):
         return hash(self.name)
 
 
-# Simple Index page (/simple/)
-class Index(Struct):
+class ProjectList(Struct):
+    """list of project names, a.k.a. project index - /simple/"""
     # PEP-629
     meta: Meta = Meta()
     # PEP-503
-    projects: set[Project] = set()
+    projects: set[ProjectListEntry] = set()

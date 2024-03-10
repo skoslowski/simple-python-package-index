@@ -19,7 +19,7 @@ from packaging.utils import (
     parse_wheel_filename,
 )
 
-from .model import Details, File, Index, Project
+from .model import ProjectDetail, ProjectFile, ProjectList, ProjectListEntry
 
 logger = logging.getLogger()
 
@@ -31,7 +31,7 @@ RESERVED_PROJECT_NAMES = {"simple"}
 class FileExt:
     project_name: NormalizedName
     version: str
-    distribution: File
+    distribution: ProjectFile
     collection: str
 
     metadata: bytes
@@ -51,7 +51,7 @@ class FileExt:
 
         metadata, _ = parse_email(metadata_content)
 
-        distribution = File(
+        distribution = ProjectFile(
             filename=file.name,
             size=file.stat().st_size,
             url=str(base_url / file.relative_to(base).as_posix()),
@@ -70,20 +70,20 @@ class FileExt:
 
 @dataclass
 class SimpleIndex:
-    projects: dict[NormalizedName, Details] = field(default_factory=dict)
+    projects: dict[NormalizedName, ProjectDetail] = field(default_factory=dict)
 
     @cached_property
-    def index(self) -> Index:
-        return Index(projects={Project(name=name) for name in self.projects})
+    def index(self) -> ProjectList:
+        return ProjectList(projects={ProjectListEntry(name=name) for name in self.projects})
 
-    def __getitem__(self, name: NormalizedName) -> Details:
+    def __getitem__(self, name: NormalizedName) -> ProjectDetail:
         return self.projects[name]
 
     def add_distribution(self, file: FileExt) -> None:
         try:
             project_details = self.projects[file.project_name]
         except KeyError:
-            project_details = self.projects[file.project_name] = Details(name=file.project_name)
+            project_details = self.projects[file.project_name] = ProjectDetail(name=file.project_name)
         project_details.files.add(file.distribution)
         project_details.versions.add(file.version)
 

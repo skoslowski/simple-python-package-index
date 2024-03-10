@@ -62,7 +62,7 @@ class SimpleIndexView(Controller):
     path = "simple"
 
     @get("/", sync_to_thread=False)
-    def index(self, request: Request, simple_index: loader.SimpleIndex) -> Response[loader.Index | str]:
+    def index(self, request: Request, simple_index: loader.SimpleIndex) -> Response[loader.ProjectList | str]:
         media_type = get_response_type(request)
         match media_type:
             case PPSMediaType.JSON_V1:
@@ -77,7 +77,7 @@ class SimpleIndexView(Controller):
     @get("{project_name:str}/", sync_to_thread=False)
     def project_detail(
         self, request: Request, project_name: str, simple_index: loader.SimpleIndex
-    ) -> Response[loader.Details | str]:
+    ) -> Response[loader.ProjectDetail | str]:
         name = canonicalize_name(project_name)
         if name != project_name:
             return Redirect(path=request.url.path.replace(project_name, name), status_code=301)
