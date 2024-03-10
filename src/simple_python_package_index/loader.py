@@ -11,6 +11,7 @@ from typing import Self
 from zipfile import ZipFile
 
 from furl import furl
+from natsort import natsorted
 from packaging.metadata import parse_email
 from packaging.utils import (
     NormalizedName,
@@ -73,8 +74,8 @@ class SimpleIndex:
     projects: dict[NormalizedName, ProjectDetail] = field(default_factory=dict)
 
     @cached_property
-    def index(self) -> ProjectList:
-        return ProjectList(projects={ProjectListEntry(name=name) for name in self.projects})
+    def project_list(self) -> ProjectList:
+        return ProjectList(projects={ProjectListEntry(name=name) for name in natsorted(self.projects)})
 
     def __getitem__(self, name: NormalizedName) -> ProjectDetail:
         return self.projects[name]
@@ -164,6 +165,7 @@ def _get_sdist_metadata(file: Path) -> bytes:
         assert pkg_info
         with pkg_info as fp:
             return fp.read()
+
 
 def open_metadata(file: Path) -> bytes | None:
     if file.suffix == ".whl":

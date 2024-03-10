@@ -1,19 +1,24 @@
 import logging
+import sys
 from enum import StrEnum
+from importlib import metadata
 from pathlib import Path
 from typing import Any
 
 from furl import furl
-from litestar import Controller, Litestar, MediaType, Request, Response, Router, get
+from litestar import Controller, Litestar, Request, Response, Router, get
+from litestar.contrib.jinja import JinjaTemplateEngine
 from litestar.di import Provide
-from litestar.response import File, Redirect
-from litestar.serialization import default_serializer
-from litestar.types import Serializer
+from litestar.response import File, Redirect, Template
+from litestar.serialization import encode_json
+from litestar.template.config import TemplateConfig
 from packaging.utils import canonicalize_name
 from pydantic import DirectoryPath
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from . import html, loader
+from . import __version__, loader
+
+GENERATOR = f"{__package__} v{metadata.version(__package__)}"
 
 
 class Settings(BaseSettings):
@@ -28,34 +33,21 @@ settings = Settings()
 logger = logging.getLogger(__name__)
 
 
-class PyPISimpleResponse[T](Response[T]):
-    def render(self, content: Any, media_type: str, enc_hook: Serializer = default_serializer) -> bytes:
-        media_type = {"json": MediaType.JSON, "html": MediaType.HTML}.get(
-            media_type.rpartition("+")[-1], media_type
-        )
-        return super().render(content, media_type, enc_hook)
-
-
 class PPSMediaType(StrEnum):
     JSON_V1 = "application/vnd.pypi.simple.v1+json"
     HTML_V1 = "application/vnd.pypi.simple.v1+html"
 
 
 def get_response_type(request: Request) -> PPSMediaType | None:
-    html = {
-        PPSMediaType.HTML_V1,
-        "application/vnd.pypi.simple.latest+html",
-        MediaType.HTML,
+    supported = {
+        PPSMediaType.HTML_V1: PPSMediaType.HTML_V1,
+        PPSMediaType.JSON_V1: PPSMediaType.JSON_V1,
+        "application/vnd.pypi.simple.latest+json": PPSMediaType.JSON_V1,
+        "application/vnd.pypi.simple.latest+html": PPSMediaType.HTML_V1,
     }
-    if html.intersection(request.accept):
-        return PPSMediaType.HTML_V1
-
-    json = {
-        PPSMediaType.JSON_V1,
-        "application/vnd.pypi.simple.latest+json",
-    }
-    if json.intersection(request.accept):
-        return PPSMediaType.JSON_V1
+    if match := request.accept.best_match(list(supported)):
+        return supported[match]
+    return None
 
 
 class SimpleIndexView(Controller):
@@ -63,16 +55,7 @@ class SimpleIndexView(Controller):
 
     @get("/", sync_to_thread=False)
     def index(self, request: Request, simple_index: loader.SimpleIndex) -> Response[loader.ProjectList | str]:
-        media_type = get_response_type(request)
-        match media_type:
-            case PPSMediaType.JSON_V1:
-                content = simple_index.index
-            case PPSMediaType.HTML_V1:
-                content = str(html.generate_index(simple_index.index, request.url.path))
-            case _:
-                return Response("No acceptable format found", status_code=406)
-
-        return PyPISimpleResponse(content=content, media_type=media_type)
+        return self._handle(request, simple_index.project_list, "index.html")
 
     @get("{project_name:str}/", sync_to_thread=False)
     def project_detail(
@@ -87,16 +70,17 @@ class SimpleIndexView(Controller):
         except KeyError:
             return Response("Project can not be found", status_code=404)
 
-        media_type = get_response_type(request)
-        match media_type:
-            case PPSMediaType.JSON_V1:
-                content = project_details
-            case PPSMediaType.HTML_V1:
-                content = str(html.generate_project_page(project_details))
-            case _:
-                return Response("No acceptable format found", status_code=406)
+        return self._handle(request, project_details, "details.html")
 
-        return PyPISimpleResponse(content=content, media_type=media_type)
+    def _handle(self, request: Request, content: Any, template_name: str) -> Response:
+        match get_response_type(request):
+            case PPSMediaType.JSON_V1:
+                return Response(encode_json(content), media_type=PPSMediaType.JSON_V1)
+            case PPSMediaType.HTML_V1:
+                context = ({"content": content, "generator": GENERATOR},)
+                return Template(template_name, context=context, media_type=PPSMediaType.HTML_V1)
+
+        return Response("No acceptable format found", status_code=406)
 
 
 def get_path(file: Path) -> Path | None:
@@ -130,7 +114,7 @@ def provide(obj: Any) -> Provide:
 
 
 def main() -> Litestar:
-    handler = logging.StreamHandler()
+    handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(logging.Formatter("%(levelname)s:     %(message)s"))
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
@@ -147,6 +131,10 @@ def main() -> Litestar:
     app = Litestar(
         route_handlers=[ping, files],
         dependencies={"index_tree": provide(index_tree)},
+        template_config=TemplateConfig(
+            directory=Path(__file__).with_name("templates"),
+            engine=JinjaTemplateEngine,
+        ),
         debug=True,
     )
     app.register(Router(settings.files_url, route_handlers=[files]))
