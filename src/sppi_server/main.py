@@ -18,7 +18,7 @@ from packaging.utils import canonicalize_name
 from pydantic import DirectoryPath
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from . import loader
+from .loader import SimpleIndex, SimpleIndexTree
 
 GENERATOR = f"{__package__} v{metadata.version(__package__)}"
 
@@ -62,21 +62,11 @@ def _handle(request: Request, content: Any, template_name: str) -> Response:
     return Response("No acceptable format found", status_code=HTTP_406_NOT_ACCEPTABLE)
 
 
-# @get(["/simple/", "/{path:str}/simple/" "/{path:str}/{subpath:str}/simple/"], sync_to_thread=False)
-# def project_list(request: Request, index_tree: loader.SimpleIndexTree, path: str = "") -> Response:
-#     return Response(f"{path} {type(path)}")
-#     try:
-#         simple_index = index_tree[path]
-#     except KeyError:
-#         return Response("Project list can not be found", status_code=404)
-#     return _handle(request, simple_index.project_list, "index.html")
-
-
 class SimpleIndexView(Controller):
     path = "simple"
 
     @get("/", sync_to_thread=False)
-    def index(self, request: Request, simple_index: loader.SimpleIndex | None) -> Response:
+    def index(self, request: Request, simple_index: SimpleIndex | None) -> Response:
         if not simple_index:
             return Response("Index can not be found", status_code=HTTP_404_NOT_FOUND)
         return _handle(request, simple_index.project_list, "index.html")
@@ -86,11 +76,11 @@ class SimpleIndexView(Controller):
         self,
         request: Request,
         project_name: str,
-        simple_index: loader.SimpleIndex | None,
-    ) -> Response[loader.ProjectDetail | str]:
+        simple_index: SimpleIndex | None,
+    ) -> Response:
         name = canonicalize_name(project_name)
         if name != project_name:
-            path = (request.url.path.replace(project_name, name),)
+            path = request.url.path.replace(project_name, name)
             return Redirect(path, status_code=HTTP_301_MOVED_PERMANENTLY)
 
         if not simple_index:
@@ -114,7 +104,7 @@ def get_path(file: Path) -> Path | None:
 
 
 @get("/files/{file:path}")
-async def files(request: Request, file: Path, index_tree: loader.SimpleIndexTree) -> Response:
+async def files(request: Request, file: Path, index_tree: SimpleIndexTree) -> Response:
     if file.suffix == ".metadata" and (content := index_tree.meta_data(request.url.path)):
         return Response(content, media_type="binary/octet-stream")
     elif (filepath := get_path(file)) and filepath.is_file():
@@ -128,11 +118,9 @@ async def ping() -> None:
     return  # docker health-check
 
 
-def get_project_list(
-    index_tree: loader.SimpleIndexTree, path: str = "", subpath: str = ""
-) -> loader.SimpleIndex | None:
+def get_project_list(index_tree: SimpleIndexTree, path: str = "", subpath: str = "") -> SimpleIndex | None:
     with suppress(KeyError):
-        return index_tree[f"{path}/{subpath}".strip("/") or "."]
+        return index_tree[f"{path}/{subpath}".strip("/")]
 
 
 def main() -> Litestar:
@@ -144,15 +132,14 @@ def main() -> Litestar:
     logger.info("Wheels files are searched in %s", settings.files_dir)
     logger.info("Root path is %s", settings.root_path)
 
-    index_tree = loader.SimpleIndexTree(
+    index_tree = SimpleIndexTree(
         data_dir=settings.files_dir,
         url=str(furl(settings.root_path) / settings.files_url),
     )
     index_tree.reload()
     for name, index_ in sorted(index_tree.indexes()):
-        logger.info(
-            (f"Index '{name}'" if name else "Root index") + f" with {len(index_.project_details)} projects"
-        )
+        name = f"Index '{name}'" if name else "Root index"
+        logger.info(f"{name} with {len(index_.project_details)} projects")
 
     app = Litestar(
         route_handlers=[ping],

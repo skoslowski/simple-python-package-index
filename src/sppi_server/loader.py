@@ -28,7 +28,7 @@ RESERVED_COLLECTION_NAMES = {"files"}
 RESERVED_PROJECT_NAMES = {"simple"}
 
 
-@dataclass(slots=True)
+@dataclass
 class SimpleIndex:
     project_details: dict[NormalizedName, ProjectDetail] = field(default_factory=dict)
 
@@ -60,7 +60,7 @@ class SimpleIndexTree:
                 continue
 
             parents = (c.as_posix() for c in entry.relative_to(self.data_dir).parents[-3:])
-            for index in (indexes[c] for c in parents if _check_collection_name(c)):
+            for index in (indexes[c if c != "." else ""] for c in parents):
                 try:
                     details = index.project_details[file.project_name]
                 except KeyError:
@@ -71,8 +71,7 @@ class SimpleIndexTree:
 
             self._metadata[f"{file.distribution.url}.metadata"] = file.metadata
 
-        self._indexes.clear()
-        self._indexes.update(indexes)
+        self._indexes = {n: i for n, i in indexes.items() if _check_collection_name(n)}
 
     def __getitem__(self, key: str) -> SimpleIndex:
         return self._indexes[key]
@@ -123,7 +122,7 @@ def _read_project_file(file: Path, base: Path, base_url: furl) -> ProjectFileInf
 
 
 def _check_collection_name(name: str) -> bool:
-    if name in RESERVED_COLLECTION_NAMES:
+    if RESERVED_COLLECTION_NAMES.intersection(name.split("/")):
         logger.error("Ignoring collection '{collection_name}': reserved name")
         return False
     if name != urllib.parse.quote(name):
@@ -132,7 +131,7 @@ def _check_collection_name(name: str) -> bool:
     return True
 
 
-def _get_file_hashes(filename: Path, blocksize: int = 1 << 20) -> dict[str, str]:
+def _get_file_hashes(filename: Path, blocksize: int = 2 << 13) -> dict[str, str]:
     hash_obj = hashlib.sha256()
     with open(filename, "rb") as fp:
         while fb := fp.read(blocksize):
