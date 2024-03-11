@@ -1,6 +1,6 @@
-from contextlib import suppress
 import logging
 import sys
+from contextlib import suppress
 from enum import StrEnum
 from importlib import metadata
 from pathlib import Path
@@ -150,7 +150,9 @@ def main() -> Litestar:
     )
     index_tree.reload()
     for name, index_ in sorted(index_tree.indexes()):
-        logger.info((f"Index '{name}'" if name else "Root index") + f" with {len(index_.project_details)} projects")
+        logger.info(
+            (f"Index '{name}'" if name else "Root index") + f" with {len(index_.project_details)} projects"
+        )
 
     app = Litestar(
         route_handlers=[ping],
