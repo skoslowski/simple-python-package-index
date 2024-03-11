@@ -1,3 +1,4 @@
+from contextlib import suppress
 import logging
 import sys
 from enum import StrEnum
@@ -75,30 +76,25 @@ class SimpleIndexView(Controller):
     path = "simple"
 
     @get("/", sync_to_thread=False)
-    def index(
-        self,
-        request: Request,
-        index_tree: loader.SimpleIndexTree,
-        path: str = "",
-        subpath: str = "",
-    ) -> Response:
-        try:
-            simple_index = index_tree[f"{path}/{subpath}".strip("/") or "."]
-        except KeyError:
-            return Response("Project can not be found", status_code=HTTP_404_NOT_FOUND)
-
+    def index(self, request: Request, simple_index: loader.SimpleIndex | None) -> Response:
+        if not simple_index:
+            return Response("Index can not be found", status_code=HTTP_404_NOT_FOUND)
         return _handle(request, simple_index.project_list, "index.html")
 
     @get("{project_name:str}/", sync_to_thread=False)
     def project_detail(
-        self, request: Request, project_name: str, simple_index: loader.SimpleIndex
+        self,
+        request: Request,
+        project_name: str,
+        simple_index: loader.SimpleIndex | None,
     ) -> Response[loader.ProjectDetail | str]:
         name = canonicalize_name(project_name)
         if name != project_name:
-            return Redirect(
-                path=request.url.path.replace(project_name, name),
-                status_code=HTTP_301_MOVED_PERMANENTLY,
-            )
+            path = (request.url.path.replace(project_name, name),)
+            return Redirect(path, status_code=HTTP_301_MOVED_PERMANENTLY)
+
+        if not simple_index:
+            return Response("Project can not be found", status_code=HTTP_404_NOT_FOUND)
 
         try:
             project_details = simple_index[name]
@@ -132,10 +128,11 @@ async def ping() -> None:
     return  # docker health-check
 
 
-def provide(obj: Any) -> Provide:
-    provider = Provide(lambda: None, use_cache=True, sync_to_thread=True)
-    provider.value = obj
-    return provider
+def get_project_list(
+    index_tree: loader.SimpleIndexTree, path: str = "", subpath: str = ""
+) -> loader.SimpleIndex | None:
+    with suppress(KeyError):
+        return index_tree[f"{path}/{subpath}".strip("/") or "."]
 
 
 def main() -> Litestar:
@@ -153,11 +150,11 @@ def main() -> Litestar:
     )
     index_tree.reload()
     for name, index_ in sorted(index_tree.indexes()):
-        logger.info((f"Index '{name}'" if name else "Root index") + f" with {len(index_.projects)} projects")
+        logger.info((f"Index '{name}'" if name else "Root index") + f" with {len(index_.project_details)} projects")
 
     app = Litestar(
         route_handlers=[ping],
-        dependencies={"index_tree": provide(index_tree)},
+        dependencies={"index_tree": Provide(lambda: index_tree, use_cache=True, sync_to_thread=True)},
         template_config=TemplateConfig(
             directory=Path(__file__).with_name("templates"),
             engine=JinjaTemplateEngine,
@@ -167,17 +164,10 @@ def main() -> Litestar:
     app.register(Router(settings.files_url, route_handlers=[files]))
 
     for path in ["/", "/{path:str}/", "/{path:str}/{subpath:str}/"]:
-        app.register(Router(path, route_handlers=[SimpleIndexView]))
-
-    return app
-
-    for name, index_ in sorted(index_tree.indexes()):
-        logger.info((f"Index '{name}'" if name else "Root index") + f" with {len(index_.projects)} projects")
-
         router = Router(
-            name if name != "." else "",
+            path,
             route_handlers=[SimpleIndexView],
-            dependencies={"simple_index": provide(index_)},
+            dependencies={"simple_index": Provide(get_project_list, sync_to_thread=True)},
         )
         app.register(router)
 

@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 from tarfile import TarFile
-from typing import Self
 from zipfile import ZipFile
 
 from furl import furl
@@ -16,6 +15,7 @@ from packaging.metadata import parse_email
 from packaging.utils import (
     NormalizedName,
     canonicalize_name,
+    canonicalize_version,
     parse_sdist_filename,
     parse_wheel_filename,
 )
@@ -28,65 +28,16 @@ RESERVED_COLLECTION_NAMES = {"files"}
 RESERVED_PROJECT_NAMES = {"simple"}
 
 
-@dataclass
-class FileExt:
-    project_name: NormalizedName
-    version: str
-    distribution: ProjectFile
-    collection: str
-
-    metadata: bytes
-
-    @classmethod
-    def from_file(cls, file: Path, base: Path, base_url: furl) -> Self:
-        if file.suffix == ".whl":
-            name_from_file, version_from_file, *_ = parse_wheel_filename(file.name)
-            metadata_content = _get_wheel_metadata(file)
-
-        elif file.suffixes[-2:] == [".tar", ".gz"]:
-            name_from_file, version_from_file = parse_sdist_filename(file.name)
-            metadata_content = _get_sdist_metadata(file)
-
-        else:
-            raise ValueError(f"Can't handle type {file.name}")
-
-        metadata, _ = parse_email(metadata_content)
-
-        distribution = ProjectFile(
-            filename=file.name,
-            size=file.stat().st_size,
-            url=str(base_url / file.relative_to(base).as_posix()),
-            hashes=_get_file_hashes(file),
-            requires_python=metadata.get("requires_python"),
-            core_metadata={"sha256": hashlib.sha256(metadata_content).hexdigest()},
-        )
-        return cls(
-            project_name=canonicalize_name(metadata.get("name", name_from_file)),
-            version=metadata.get("version", str(version_from_file)),
-            distribution=distribution,
-            collection=file.relative_to(base).parent.as_posix(),
-            metadata=metadata_content,
-        )
-
-
-@dataclass
+@dataclass(slots=True)
 class SimpleIndex:
-    projects: dict[NormalizedName, ProjectDetail] = field(default_factory=dict)
+    project_details: dict[NormalizedName, ProjectDetail] = field(default_factory=dict)
 
     @cached_property
     def project_list(self) -> ProjectList:
-        return ProjectList(projects={ProjectListEntry(name=name) for name in natsorted(self.projects)})
+        return ProjectList(projects={ProjectListEntry(name=name) for name in natsorted(self.project_details)})
 
     def __getitem__(self, name: NormalizedName) -> ProjectDetail:
-        return self.projects[name]
-
-    def add_distribution(self, file: FileExt) -> None:
-        try:
-            project_details = self.projects[file.project_name]
-        except KeyError:
-            project_details = self.projects[file.project_name] = ProjectDetail(name=file.project_name)
-        project_details.files.add(file.distribution)
-        project_details.versions.add(file.version)
+        return self.project_details[name]
 
 
 @dataclass
@@ -103,14 +54,20 @@ class SimpleIndexTree:
 
         for entry in self.data_dir.rglob("*.*"):
             try:
-                file = FileExt.from_file(entry, self.data_dir, self.url)
+                file = _read_project_file(entry, self.data_dir, self.url)
             except ValueError as e:
                 logger.error(e)
                 continue
 
             parents = (c.as_posix() for c in entry.relative_to(self.data_dir).parents[-3:])
-            for collection in (c for c in parents if _check_collection_name(c)):
-                indexes[collection].add_distribution(file)
+            for index in (indexes[c] for c in parents if _check_collection_name(c)):
+                try:
+                    details = index.project_details[file.project_name]
+                except KeyError:
+                    details = ProjectDetail(name=file.project_name)
+                    index.project_details[file.project_name] = details
+                details.files.add(file.distribution)
+                details.versions.add(file.version)
 
             self._metadata[f"{file.distribution.url}.metadata"] = file.metadata
 
@@ -125,6 +82,44 @@ class SimpleIndexTree:
 
     def meta_data(self, url: str) -> bytes | None:
         return self._metadata.get(url)
+
+
+@dataclass(slots=True)
+class ProjectFileInfo:
+    project_name: NormalizedName
+    version: str
+    distribution: ProjectFile
+    metadata: bytes
+
+
+def _read_project_file(file: Path, base: Path, base_url: furl) -> ProjectFileInfo:
+    if file.suffix == ".whl":
+        name_from_file, version_from_file, *_ = parse_wheel_filename(file.name)
+        metadata_content = _get_wheel_metadata(file)
+
+    elif file.suffixes[-2:] == [".tar", ".gz"]:
+        name_from_file, version_from_file = parse_sdist_filename(file.name)
+        metadata_content = _get_sdist_metadata(file)
+
+    else:
+        raise ValueError(f"Can't handle type {file.name}")
+
+    metadata, _ = parse_email(metadata_content)
+
+    distribution = ProjectFile(
+        filename=file.name,
+        size=file.stat().st_size,
+        url=str(base_url / file.relative_to(base).as_posix()),
+        hashes=_get_file_hashes(file),
+        requires_python=metadata.get("requires_python"),
+        core_metadata={"sha256": hashlib.sha256(metadata_content).hexdigest()},
+    )
+    return ProjectFileInfo(
+        project_name=canonicalize_name(metadata.get("name", name_from_file)),
+        version=canonicalize_version(metadata.get("version", str(version_from_file))),
+        distribution=distribution,
+        metadata=metadata_content,
+    )
 
 
 def _check_collection_name(name: str) -> bool:
@@ -147,7 +142,7 @@ def _get_file_hashes(filename: Path, blocksize: int = 1 << 20) -> dict[str, str]
 
 def _get_wheel_metadata(file: Path) -> bytes:
     # https://packaging.python.org/en/latest/specifications/binary-distribution-format/
-    distribution, version = file.name.split("-", 2)[:-1]
+    distribution, version, _ = file.name.split("-", 2)
     subdir = f"{distribution}-{version}.dist-info"
     with ZipFile(file) as zip, zip.open(f"{subdir}/METADATA") as fp:
         return fp.read()
@@ -161,10 +156,3 @@ def _get_sdist_metadata(file: Path) -> bytes:
         assert pkg_info
         with pkg_info as fp:
             return fp.read()
-
-
-def open_metadata(file: Path) -> bytes | None:
-    if file.suffix == ".whl":
-        return _get_wheel_metadata(file)
-    if file.suffixes[-2:] == [".tar", ".gz"]:
-        return _get_sdist_metadata(file)
