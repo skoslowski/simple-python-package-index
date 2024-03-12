@@ -42,24 +42,24 @@ class SimpleIndex:
 
 @dataclass
 class SimpleIndexTree:
-    def __init__(self, data_dir: Path, url: str) -> None:
-        self.data_dir = data_dir
+    def __init__(self, files_dir: Path, metadata_dir: Path, url: str) -> None:
+        self.files_dir = files_dir
+        self.metadata_dir = metadata_dir
         self.url = furl(url)
 
         self._indexes: dict[str, SimpleIndex] = {}
-        self._metadata: dict[str, bytes] = {}
 
     def reload(self) -> None:
         indexes = defaultdict(SimpleIndex)
 
-        for entry in self.data_dir.rglob("*.*"):
+        for entry in self.files_dir.rglob("*.*"):
             try:
-                file = _read_project_file(entry, self.data_dir, self.url)
+                file = _read_project_file(entry, self.files_dir, self.url)
             except ValueError as e:
                 logger.error(e)
                 continue
 
-            parents = (c.as_posix() for c in entry.relative_to(self.data_dir).parents[-3:])
+            parents = (c.as_posix() for c in entry.relative_to(self.files_dir).parents[-3:])
             for index in (indexes[c if c != "." else ""] for c in parents):
                 try:
                     details = index.project_details[file.project_name]
@@ -69,18 +69,20 @@ class SimpleIndexTree:
                 details.files.add(file.distribution)
                 details.versions.add(file.version)
 
-            self._metadata[f"{file.distribution.url}.metadata"] = file.metadata
+            self._save_metadata_file(entry, file.metadata)
 
         self._indexes = {n: i for n, i in indexes.items() if _check_collection_name(n)}
+
+    def _save_metadata_file(self, dist: Path, metadata: bytes) -> None:
+        path = self.metadata_dir / dist.parent.relative_to(self.files_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        path.joinpath(f"{dist.name}.metadata").write_bytes(metadata)
 
     def __getitem__(self, key: str) -> SimpleIndex:
         return self._indexes[key]
 
     def indexes(self) -> ItemsView[str, SimpleIndex]:
         return self._indexes.items()
-
-    def meta_data(self, url: str) -> bytes | None:
-        return self._metadata.get(url)
 
 
 @dataclass(slots=True)

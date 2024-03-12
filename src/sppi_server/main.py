@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 from contextlib import suppress
 from enum import StrEnum
@@ -12,6 +13,7 @@ from litestar.contrib.jinja import JinjaTemplateEngine
 from litestar.di import Provide
 from litestar.response import File, Redirect, Template
 from litestar.serialization import encode_json
+from litestar.static_files import create_static_files_router
 from litestar.status_codes import HTTP_301_MOVED_PERMANENTLY, HTTP_404_NOT_FOUND, HTTP_406_NOT_ACCEPTABLE
 from litestar.template.config import TemplateConfig
 from packaging.utils import canonicalize_name
@@ -94,25 +96,6 @@ class SimpleIndexView(Controller):
         return _handle(request, project_details, "details.html")
 
 
-def get_path(file: Path) -> Path | None:
-    if file.is_absolute():
-        file = file.relative_to("/")
-    files_dir = settings.files_dir.resolve()
-    file_on_disk = files_dir.joinpath(file).resolve()
-    if files_dir in file_on_disk.parents:
-        return file_on_disk
-
-
-@get("/files/{file:path}")
-async def files(request: Request, file: Path, index_tree: SimpleIndexTree) -> Response:
-    if file.suffix == ".metadata" and (content := index_tree.meta_data(request.url.path)):
-        return Response(content, media_type="binary/octet-stream")
-    elif (filepath := get_path(file)) and filepath.is_file():
-        return File(filepath)
-
-    return Response("File not found", status_code=HTTP_404_NOT_FOUND)
-
-
 @get("/ping")
 async def ping() -> None:
     return  # docker health-check
@@ -129,11 +112,15 @@ def main() -> Litestar:
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
+    FILES_DIR = Path(os.getenv("SPPI_FILES_DIR", ".")).absolute()
+    METADATA_DIR = Path(os.getenv("SPPI_METADATA_DIR", ".")).absolute()
+
     logger.info("Wheels files are searched in %s", settings.files_dir)
     logger.info("Root path is %s", settings.root_path)
 
     index_tree = SimpleIndexTree(
-        data_dir=settings.files_dir,
+        files_dir=FILES_DIR,
+        metadata_dir=METADATA_DIR,
         url=str(furl(settings.root_path) / settings.files_url),
     )
     index_tree.reload()
@@ -150,7 +137,12 @@ def main() -> Litestar:
         ),
         debug=True,
     )
-    app.register(Router(settings.files_url, route_handlers=[files]))
+    app.register(
+        create_static_files_router(
+            path="/files",
+            directories=[FILES_DIR, METADATA_DIR],
+        )
+    )
 
     for path in ["/", "/{path:str}/", "/{path:str}/{subpath:str}/"]:
         router = Router(
