@@ -9,7 +9,6 @@ from pathlib import Path
 from tarfile import TarFile
 from zipfile import ZipFile
 
-from furl import furl
 from natsort import natsorted
 from packaging.metadata import parse_email
 from packaging.utils import (
@@ -45,7 +44,7 @@ class SimpleIndexTree:
     def __init__(self, files_dir: Path, metadata_dir: Path, url: str) -> None:
         self.files_dir = files_dir
         self.metadata_dir = metadata_dir
-        self.url = furl(url)
+        self.url = url
 
         self._indexes: dict[str, SimpleIndex] = {}
 
@@ -54,7 +53,7 @@ class SimpleIndexTree:
 
         for entry in self.files_dir.rglob("*.*"):
             try:
-                file = _read_project_file(entry, self.files_dir, self.url)
+                file = _read_project_file(entry, self.url + entry.relative_to(self.files_dir).as_posix())
             except ValueError as e:
                 logger.error(e)
                 continue
@@ -93,7 +92,7 @@ class ProjectFileInfo:
     metadata: bytes
 
 
-def _read_project_file(file: Path, base: Path, base_url: furl) -> ProjectFileInfo:
+def _read_project_file(file: Path, url: str) -> ProjectFileInfo:
     if file.suffix == ".whl":
         name_from_file, version_from_file, *_ = parse_wheel_filename(file.name)
         metadata_content = _get_wheel_metadata(file)
@@ -110,7 +109,7 @@ def _read_project_file(file: Path, base: Path, base_url: furl) -> ProjectFileInf
     distribution = ProjectFile(
         filename=file.name,
         size=file.stat().st_size,
-        url=str(base_url / file.relative_to(base).as_posix()),
+        url=url,
         hashes=_get_file_hashes(file),
         requires_python=metadata.get("requires_python"),
         core_metadata={"sha256": hashlib.sha256(metadata_content).hexdigest()},

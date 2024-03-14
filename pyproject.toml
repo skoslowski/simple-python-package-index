@@ -5,12 +5,10 @@ requires = ["hatchling"]
 [project]
 authors = [{ name = "Sebastian Koslowski", email = "s.koslowski@procitec.de" }]
 dependencies = [
-  "pydantic_settings",
-  "natsort",
-  "packaging",
-  "furl",
   "litestar[standard]",
+  "natsort",
   "msgspec",
+  "packaging",
 ]
 description = 'Simple Python Package Index Server'
 version = "0.1.0"

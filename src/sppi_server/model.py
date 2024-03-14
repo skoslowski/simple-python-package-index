@@ -28,6 +28,7 @@ class ProjectFile(Struct, omit_defaults=True):
     url: str  # HttpUrl
     # Limited to a len() of 1 in HTML
     hashes: dict[str, str]
+    # not used here
     gpg_sig: bool | None = None
     # PEP-503 (updated)
     requires_python: str | None = None
