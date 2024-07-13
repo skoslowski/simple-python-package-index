@@ -2,7 +2,7 @@ import hashlib
 import logging
 import urllib.parse
 from collections import defaultdict
-from collections.abc import ItemsView
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -35,40 +35,38 @@ class SimpleIndex:
     def project_list(self) -> ProjectList:
         return ProjectList(projects={ProjectListEntry(name=name) for name in natsorted(self.project_details)})
 
-    def __getitem__(self, name: NormalizedName) -> ProjectDetail:
-        return self.project_details[name]
-
 
 @dataclass
-class SimpleIndexTree:
-    def __init__(self, files_dir: Path, metadata_dir: Path, url: str) -> None:
-        self.files_dir = files_dir
-        self.metadata_dir = metadata_dir
-        self.url = url
+class SimpleIndexTree(Mapping[str, SimpleIndex]):
+    files_dir: Path
+    metadata_dir: Path
+    url: str
 
+    def __post_init__(self) -> None:
         self._indexes: dict[str, SimpleIndex] = {}
 
     def reload(self) -> None:
         indexes = defaultdict(SimpleIndex)
 
-        for entry in self.files_dir.rglob("*.*"):
+        for file in self.files_dir.rglob("*.*"):
+            url = self.url + file.relative_to(self.files_dir).as_posix()
             try:
-                file = _read_project_file(entry, self.url + entry.relative_to(self.files_dir).as_posix())
+                file_info = _read_project_file(file, url)
             except ValueError as e:
                 logger.error(e)
                 continue
 
-            parents = (c.as_posix() for c in entry.relative_to(self.files_dir).parents[-3:])
+            parents = (c.as_posix() for c in file.relative_to(self.files_dir).parents[-3:])
             for index in (indexes[c if c != "." else ""] for c in parents):
                 try:
-                    details = index.project_details[file.project_name]
+                    details = index.project_details[file_info.project_name]
                 except KeyError:
-                    details = ProjectDetail(name=file.project_name)
-                    index.project_details[file.project_name] = details
-                details.files.add(file.distribution)
-                details.versions.add(file.version)
+                    details = ProjectDetail(name=file_info.project_name)
+                    index.project_details[file_info.project_name] = details
+                details.files.add(file_info.distribution)
+                details.versions.add(file_info.version)
 
-            self._save_metadata_file(entry, file.metadata)
+            self._save_metadata_file(file, file_info.metadata)
 
         self._indexes = {n: i for n, i in indexes.items() if _check_collection_name(n)}
 
@@ -77,11 +75,14 @@ class SimpleIndexTree:
         path.mkdir(parents=True, exist_ok=True)
         path.joinpath(f"{dist.name}.metadata").write_bytes(metadata)
 
+    def __len__(self) -> int:
+        return len(self._indexes)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._indexes)
+
     def __getitem__(self, key: str) -> SimpleIndex:
         return self._indexes[key]
-
-    def indexes(self) -> ItemsView[str, SimpleIndex]:
-        return self._indexes.items()
 
 
 @dataclass(slots=True)

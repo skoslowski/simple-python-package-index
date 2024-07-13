@@ -1,7 +1,6 @@
 import logging
 import os
 import sys
-from contextlib import suppress
 from enum import StrEnum
 from importlib import metadata
 from pathlib import Path
@@ -11,7 +10,6 @@ from litestar import Controller, Litestar, Request, Response, Router, get
 from litestar.contrib.jinja import JinjaTemplateEngine
 from litestar.di import Provide
 from litestar.response import Redirect, Template
-from litestar.serialization import encode_json
 from litestar.static_files import create_static_files_router
 from litestar.status_codes import HTTP_301_MOVED_PERMANENTLY, HTTP_404_NOT_FOUND, HTTP_406_NOT_ACCEPTABLE
 from litestar.template.config import TemplateConfig
@@ -19,7 +17,7 @@ from packaging.utils import canonicalize_name
 
 from .loader import SimpleIndex, SimpleIndexTree
 
-GENERATOR = f"{__package__} v{metadata.version(__package__)}"
+GENERATOR = f"{__package__} v{metadata.version(__package__ or "")}"
 FILES_DIR = Path(os.getenv("SPPI_FILES_DIR", ".")).absolute()
 METADATA_DIR = Path(os.getenv("SPPI_METADATA_DIR", ".")).absolute()
 
@@ -46,7 +44,7 @@ def get_response_type(request: Request) -> PPSMediaType | None:
 def make_response(request: Request, content: Any, template_name: str) -> Response:
     match get_response_type(request):
         case PPSMediaType.JSON_V1:
-            return Response(encode_json(content), media_type=PPSMediaType.JSON_V1)
+            return Response(content)
         case PPSMediaType.HTML_V1:
             context = {"content": content, "generator": GENERATOR}
             return Template(template_name, context=context, media_type=PPSMediaType.HTML_V1)
@@ -77,7 +75,7 @@ class SimpleIndexView(Controller):
         if not simple_index:
             return Response("Project can not be found", status_code=HTTP_404_NOT_FOUND)
         try:
-            project_details = simple_index[name]
+            project_details = simple_index.project_details[name]
         except KeyError:
             return Response("Project can not be found", status_code=HTTP_404_NOT_FOUND)
 
@@ -90,8 +88,7 @@ async def ping() -> None:
 
 
 def get_project_list(index_tree: SimpleIndexTree, path: str = "", subpath: str = "") -> SimpleIndex | None:
-    with suppress(KeyError):
-        return index_tree[f"{path}/{subpath}".strip("/")]
+    return index_tree.get(f"{path}/{subpath}".strip("/"))
 
 
 def get_index_tree(request: Request) -> SimpleIndexTree:
@@ -101,7 +98,7 @@ def get_index_tree(request: Request) -> SimpleIndexTree:
         url=request.url_for("files", file_path="/"),
     )
     index_tree.reload()
-    for name, index_ in sorted(index_tree.indexes()):
+    for name, index_ in sorted(index_tree.items()):
         name = f"Index '{name}'" if name else "Root index"
         logger.info(f"{name} with {len(index_.project_details)} projects")
 
