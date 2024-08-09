@@ -40,16 +40,20 @@ class SimpleIndex:
 class SimpleIndexTree(Mapping[str, SimpleIndex]):
     files_dir: Path
     metadata_dir: Path
-    url: str
+    files_url: str
 
     def __post_init__(self) -> None:
         self._indexes: dict[str, SimpleIndex] = {}
+        if not self.files_url.endswith("/"):
+            self.files_url += "/"
 
     def reload(self) -> None:
-        indexes = defaultdict(SimpleIndex)
+        indexes = defaultdict[str, SimpleIndex](SimpleIndex)
 
         for file in self.files_dir.rglob("*.*"):
-            url = self.url + file.relative_to(self.files_dir).as_posix()
+            if not file.is_file():
+                continue
+            url = self.files_url + file.relative_to(self.files_dir).as_posix()
             try:
                 file_info = _read_project_file(file, url)
             except ValueError as e:

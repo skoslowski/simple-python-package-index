@@ -19,35 +19,35 @@ from .loader import SimpleIndex, SimpleIndexTree
 
 GENERATOR = f"{__package__} v{metadata.version(__package__ or "")}"
 FILES_DIR = Path(os.getenv("SPPI_FILES_DIR", ".")).absolute()
-METADATA_DIR = Path(os.getenv("SPPI_METADATA_DIR", ".")).absolute()
+CACHE_DIR = Path(os.getenv("SPPI_CACHE_DIR", ".")).absolute()
 
 logger = logging.getLogger(__name__)
 
 
-class PPSMediaType(StrEnum):
+class MediaType(StrEnum):
     JSON_V1 = "application/vnd.pypi.simple.v1+json"
     HTML_V1 = "application/vnd.pypi.simple.v1+html"
 
 
-def get_response_type(request: Request) -> PPSMediaType | None:
+def get_response_type(request: Request) -> MediaType | None:
     supported = {
-        PPSMediaType.HTML_V1: PPSMediaType.HTML_V1,
-        PPSMediaType.JSON_V1: PPSMediaType.JSON_V1,
-        "application/vnd.pypi.simple.latest+json": PPSMediaType.JSON_V1,
-        "application/vnd.pypi.simple.latest+html": PPSMediaType.HTML_V1,
+        MediaType.HTML_V1: MediaType.HTML_V1,
+        MediaType.JSON_V1: MediaType.JSON_V1,
+        "application/vnd.pypi.simple.latest+json": MediaType.JSON_V1,
+        "application/vnd.pypi.simple.latest+html": MediaType.HTML_V1,
     }
     if match := request.accept.best_match(list(supported)):
         return supported[match]
     return None
 
 
-def make_response(request: Request, content: Any, template_name: str) -> Response:
+def get_response(request: Request, content: Any, template_name: str) -> Response:
     match get_response_type(request):
-        case PPSMediaType.JSON_V1:
-            return Response(content)
-        case PPSMediaType.HTML_V1:
+        case MediaType.JSON_V1:
+            return Response(content, media_type=MediaType.JSON_V1)
+        case MediaType.HTML_V1:
             context = {"content": content, "generator": GENERATOR}
-            return Template(template_name, context=context, media_type=PPSMediaType.HTML_V1)
+            return Template(template_name, context=context, media_type=MediaType.HTML_V1)
     return Response("No acceptable format found", status_code=HTTP_406_NOT_ACCEPTABLE)
 
 
@@ -58,7 +58,7 @@ class SimpleIndexView(Controller):
     def index(self, request: Request, simple_index: SimpleIndex | None) -> Response:
         if not simple_index:
             return Response("Index can not be found", status_code=HTTP_404_NOT_FOUND)
-        return make_response(request, simple_index.project_list, "index.html")
+        return get_response(request, simple_index.project_list, "index.html")
 
     @get("{project_name:str}/", sync_to_thread=False)
     def project_detail(
@@ -72,19 +72,24 @@ class SimpleIndexView(Controller):
             path = request.url.path.replace(project_name, name)
             return Redirect(path, status_code=HTTP_301_MOVED_PERMANENTLY)
 
-        if not simple_index:
-            return Response("Project can not be found", status_code=HTTP_404_NOT_FOUND)
         try:
+            if not simple_index:
+                raise KeyError
             project_details = simple_index.project_details[name]
         except KeyError:
             return Response("Project can not be found", status_code=HTTP_404_NOT_FOUND)
 
-        return make_response(request, project_details, "details.html")
+        return get_response(request, project_details, "details.html")
 
 
 @get("/ping")
 async def ping() -> None:
     return  # docker health-check
+
+
+@get("/reload")
+async def reload(index_tree: SimpleIndexTree) -> None:
+    index_tree.reload()
 
 
 def get_project_list(index_tree: SimpleIndexTree, path: str = "", subpath: str = "") -> SimpleIndex | None:
@@ -94,8 +99,8 @@ def get_project_list(index_tree: SimpleIndexTree, path: str = "", subpath: str =
 def get_index_tree(request: Request) -> SimpleIndexTree:
     index_tree = SimpleIndexTree(
         files_dir=FILES_DIR,
-        metadata_dir=METADATA_DIR,
-        url=request.url_for("files", file_path="/"),
+        metadata_dir=CACHE_DIR,
+        files_url=request.url_for("files", file_path="/"),  # includes root_path
     )
     index_tree.reload()
     for name, index_ in sorted(index_tree.items()):
@@ -113,13 +118,14 @@ def main() -> Litestar:
 
     files = create_static_files_router(
         path="/files",
-        directories=[FILES_DIR, METADATA_DIR],
+        directories=[FILES_DIR, CACHE_DIR],
         name="files",
     )
     app = Litestar(
         route_handlers=[
             ping,
             files,
+            reload,
         ],
         dependencies={
             "index_tree": Provide(get_index_tree, use_cache=True, sync_to_thread=True),
