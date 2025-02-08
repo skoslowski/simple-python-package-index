@@ -9,18 +9,17 @@ authors = [
 dependencies = [
   "fastapi >= 0.70.0",
   "pydantic_settings",
-  "airium",
-  "natsort",
   "packaging",
-  "furl",
+  "jinja2 >=3.1.5",
   "python-multipart >= 0.0.5",
   "uvicorn[standard] >= 0.15.0",
+  "sqlmodel>=0.0.22",
 ]
 description = 'Simple PEP503 index for python packages'
 version = "0.0.1"
 license = "MIT"
-name = "python-package-server"
-requires-python = ">=3.11"
+name = "pypi-simple-server"
+requires-python = ">=3.12"
 
 [tool.black]
 line-length = 100
@@ -35,4 +34,4 @@ line-length = 110
 
 
 [tool.hatch.build.targets.wheel]
-sources = ["src/pyps"]
+sources = ["src"]
