@@ -35,3 +35,10 @@ line-length = 110
 
 [tool.hatch.build.targets.wheel]
 sources = ["src"]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pypi-simple>=1.6.1",
+    "pytest>=8.3.4",
+]

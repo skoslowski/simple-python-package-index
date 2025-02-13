@@ -55,11 +55,13 @@ def get_project_list(index: str, session: Session) -> ProjectList:
     if index and not index[-1] == "/":
         index = f"{index}/"
     results = session.exec(
-        select(Distribution.name, Index.name)
+        select(Distribution.name)
+        .distinct()
         .where(Index.id == Distribution.index_id)
         .where(Index.name.startswith(index))
+        .order_by(Distribution.name)
     )
-    return ProjectList(projects={ProjectListEntry(name=name) for name, _ in results})
+    return ProjectList(projects=[ProjectListEntry(name=name) for name in results])
 
 
 def get_project_detail(index: str, project: NormalizedName, session: Session) -> ProjectDetail:
@@ -88,7 +90,9 @@ def get_project_detail(index: str, project: NormalizedName, session: Session) ->
     return detail
 
 
-def get_one_or_create[T: SQLModel](session: Session, query: Any, factory: Callable[[], T]) -> tuple[T, bool]:
+def get_one_or_create[
+    T: SQLModel
+](session: Session, query: Any, factory: Callable[[], T]) -> tuple[T, bool]:
     try:
         return session.exec(query).one(), False
     except NoResultFound:

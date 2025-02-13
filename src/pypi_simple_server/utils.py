@@ -6,8 +6,9 @@ from inspect import isawaitable
 from pathlib import Path
 
 from anyio import to_thread
-from fastapi import Request
+from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
+from httpx._api import head
 from starlette.status import HTTP_304_NOT_MODIFIED, HTTP_412_PRECONDITION_FAILED
 
 from .config import settings
@@ -28,6 +29,9 @@ class FileMTimeWatcher:
             self.mtime = stat.st_mtime
             await asyncio.sleep(self.polling_interval)
 
+    def __str__(self) -> str:
+        return str(self.mtime)
+
 
 EtagGen = Callable[[Request], str | None | Awaitable[str | None]]
 
@@ -47,7 +51,7 @@ class Etag:
             return True
         return not client_etag or etag != client_etag
 
-    async def __call__(self, request: Request) -> str | None:
+    async def __call__(self, request: Request, response: Response) -> str | None:
         etag = (await r) if isawaitable(r := self.etag_gen(request)) else r
         if etag and self.weak:
             etag = f'W/"{etag}"'
@@ -67,4 +71,5 @@ class Etag:
         elif modified and header_type == HeaderType.IF_MATCH:
             raise HTTPException(HTTP_412_PRECONDITION_FAILED, headers=headers)
 
+        response.headers.update(headers)
         return etag

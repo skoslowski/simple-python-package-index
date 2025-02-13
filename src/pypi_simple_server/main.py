@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from enum import StrEnum
 from importlib.metadata import version
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import HTTPException
@@ -48,12 +48,7 @@ class SimpleV1JSONResponse(JSONResponse):
 templates = Jinja2Templates(env=jinja_env)
 
 
-app = FastAPI(
-    title=__package__ or "",
-    version=version("pyps"),
-    lifespan=lifespan,
-    default_response_class=SimpleV1JSONResponse,
-)
+app = FastAPI(title=__package__ or "", version=version(__package__ or ""), lifespan=lifespan)
 
 
 @app.get("/reload", response_class=PlainTextResponse)
@@ -86,30 +81,28 @@ def get_response_media_type(request: Request) -> MediaType:
 
 
 def get_response(
-    request: Request, model: Any, media_type: MediaType, etag: str, template_name: str
-) -> Response:
+    request: Request, model: ProjectList | ProjectDetail, media_type: MediaType, template_name: str
+) -> ProjectList | ProjectDetail | Response:
     match media_type:
         case MediaType.JSON_V1:
-            response = SimpleV1JSONResponse(model)
+            return model
         case MediaType.HTML_V1:
             context = {"model": model, "generator": f"{app.title} v{app.version}"}
-            response = templates.TemplateResponse(
+            return templates.TemplateResponse(
                 request=request, name=template_name, context=context, media_type=media_type
             )
         case _:
             raise HTTPException(HTTP_406_NOT_ACCEPTABLE)
 
-    response.headers["etag"] = etag
-    return response
 
-
-etag_handler = Etag(lambda r: str(r.state.dbfile_watcher.mtime))
+etag_handler = Etag(lambda r: str(getattr(r.state, "dbfile_watcher", "")))
 
 
 def index_get(path: str, summary: str):
     return app.get(
         path,
         summary=summary,
+        response_class=SimpleV1JSONResponse,
         response_model=ProjectList,
         response_model_exclude_none=True,
     )
@@ -129,13 +122,14 @@ async def index(
     if not project_list.projects:
         raise HTTPException(HTTP_404_NOT_FOUND, detail="Can't find this index")
 
-    return get_response(request, project_list, media_type, etag, "index.html")
+    return get_response(request, project_list, media_type, "index.html")
 
 
 def detail_get(path: str, summary: str):
     return app.get(
         path,
         summary=summary,
+        response_class=SimpleV1JSONResponse,
         response_model=ProjectDetail,
         response_model_exclude_none=True,
         dependencies=[Depends(Etag(lambda r: str(r.state.dbfile_watcher.mtime)))],
@@ -166,7 +160,7 @@ async def project_detail(
     if not project_details.files:
         raise HTTPException(HTTP_404_NOT_FOUND, detail="Can't find this project")
 
-    return get_response(request, project_details, media_type, etag, "detail.html")
+    return get_response(request, project_details, media_type, "detail.html")
 
 
 staticfiles = StaticFiles()

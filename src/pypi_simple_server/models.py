@@ -7,9 +7,7 @@ from pydantic import BaseModel, Field
 ProjectName = Annotated[
     str, Field(pattern=r"^([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])$")
 ]
-NormalizedProjectName = Annotated[
-    NormalizedName, Field(pattern=r"^([0-9a-z]+-)*[0-9a-z]+$")
-]
+NormalizedProjectName = Annotated[NormalizedName, Field(pattern=r"^([0-9a-z]+-)*[0-9a-z]+$")]
 
 
 class Meta(BaseModel):
@@ -65,7 +63,8 @@ class ProjectListEntry(BaseModel):
 # Simple Index page (/simple/)
 class ProjectList(BaseModel):
     """list of project names, a.k.a. project index - /simple/"""
+
     # PEP-629
     meta: Meta = Meta()
     # PEP-503
-    projects: set[ProjectListEntry] = set()
+    projects: list[ProjectListEntry] = []  # order matters
