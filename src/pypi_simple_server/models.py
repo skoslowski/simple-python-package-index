@@ -4,9 +4,7 @@ from packaging.utils import NormalizedName
 from pydantic import BaseModel, Field
 
 # https://peps.python.org/pep-0508/#names
-ProjectName = Annotated[
-    str, Field(pattern=r"^([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])$")
-]
+ProjectName = Annotated[str, Field(pattern=r"^([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])$")]
 NormalizedProjectName = Annotated[NormalizedName, Field(pattern=r"^([0-9a-z]+-)*[0-9a-z]+$")]
 
 
@@ -38,15 +36,15 @@ class ProjectFile(BaseModel):
 
 
 # Simple Detail page (/simple/$PROJECT/)
-class ProjectDetail(BaseModel):
+class ProjectDetail[File](BaseModel):
     # PEP-629
     meta: Meta = Meta()
     # PEP-691
     name: NormalizedProjectName
     # PEP-700
-    versions: set[str] = set()
+    versions: list[str] = list()
     # PEP-503
-    files: set[ProjectFile] = set()
+    files: list[File] = list()
 
     def __hash__(self) -> int:
         return hash(self.name)
@@ -67,4 +65,4 @@ class ProjectList(BaseModel):
     # PEP-629
     meta: Meta = Meta()
     # PEP-503
-    projects: list[ProjectListEntry] = []  # order matters
+    projects: list[ProjectListEntry] = []

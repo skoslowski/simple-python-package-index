@@ -17,7 +17,7 @@ from starlette.status import HTTP_404_NOT_FOUND, HTTP_406_NOT_ACCEPTABLE
 from .config import settings
 from .database import create_db_and_tables, get_project_detail, get_project_list, get_session
 from .loader import update_db
-from .models import ProjectDetail, ProjectList
+from .models import ProjectDetail, ProjectFile, ProjectList
 from .templates import jinja_env
 from .utils import Etag, FileMTimeWatcher
 
@@ -130,7 +130,7 @@ def detail_get(path: str, summary: str):
         path,
         summary=summary,
         response_class=SimpleV1JSONResponse,
-        response_model=ProjectDetail,
+        response_model=ProjectDetail[ProjectFile],
         response_model_exclude_none=True,
         dependencies=[Depends(Etag(lambda r: str(r.state.dbfile_watcher.mtime)))],
     )

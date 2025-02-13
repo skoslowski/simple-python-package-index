@@ -12,10 +12,11 @@ from packaging.utils import (
     parse_sdist_filename,
     parse_wheel_filename,
 )
+from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlmodel import Session, select
 
 from .config import settings
-from .database import Distribution, Index, get_one_or_create
+from .database import Distribution
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ def _get_file_hashes(filename: Path, blocksize: int = 2 << 13) -> dict[str, str]
     return {hash_obj.name: hash_obj.hexdigest()}
 
 
-def _read_project_file(file: Path) -> Distribution:
+def _read_project_file(file: Path, url: str) -> Distribution:
     metadata_content = read_project_metadata(file)
 
     try:
@@ -85,48 +86,34 @@ def _read_project_file(file: Path) -> Distribution:
         version=version,
         filename=file.name,
         size=file.stat().st_size,
+        url=url,
         hashes=_get_file_hashes(file),
         requires_python=metadata.get("requires_python"),
         core_metadata={"sha256": hashlib.sha256(metadata_content).hexdigest()},
     )
 
 
-def update_db(session: Session) -> set[Path]:
-    added = set()
-
+def update_db(session: Session) -> None:
     for file in settings.base_dir.rglob("*.*"):
-        index_name = Path("/").joinpath(file.relative_to(settings.base_dir)).parent.as_posix()
-        index_name = index_name.strip("/") + "/"
-
-        index, _ = get_one_or_create(
-            session,
-            select(Index).where(Index.name == index_name),
-            lambda: Index(name=index_name),
-        )
+        url = file.relative_to(settings.base_dir).as_posix()
 
         try:
+            query = select(Distribution.id).where(Distribution.url == url)
+            session.exec(query).one()
+            continue
+        except NoResultFound:
+            pass
 
-            def new_file():
-                dist = _read_project_file(file)
-                dist.index_id = index.id
-                return dist
-
-            dist, new = get_one_or_create(
-                session,
-                select(Distribution)
-                .where(Distribution.index_id == index.id)
-                .where(Distribution.filename == file.name),
-                new_file,
-            )
+        try:
+            dist = _read_project_file(file, url)
         except UnhandledFileTypeError:
             continue
         except InvalidFileError as e:
             logger.error(e)
             continue
 
-        if new:
-            added.add(file)
-            print(index.name, dist.filename)
-
-    session.commit()
-    return added
+        try:
+            session.add(dist)
+            session.commit()
+        except IntegrityError:
+            session.rollback()
