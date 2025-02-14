@@ -113,7 +113,7 @@ def test_root_project_pytest_html(client: TestClient):
         </html>
     """
     assert response.text == dedent(expected).strip()
-
+    assert response.headers.get("etag")
 
 def test_root_index_json(client: TestClient):
     response = client.get("/simple/", headers={"Accept": "application/vnd.pypi.simple.latest+json"})
@@ -129,6 +129,7 @@ def test_root_index_json(client: TestClient):
         ],
     }
     assert response.json() == expected
+    assert response.headers.get("etag")
 
 
 def test_root_project_pytest_json(client: TestClient):
@@ -173,6 +174,7 @@ def test_root_project_pytest_json(client: TestClient):
         ],
     }
     assert response.json() == expected
+    assert response.headers.get("etag")
 
 
 def test_sub_index_json(client: TestClient):
@@ -181,6 +183,7 @@ def test_sub_index_json(client: TestClient):
 
     projects = {p["name"] for p in response.json()["projects"]}
     assert projects == {"iniconfig", "pluggy", "pytest"}
+    assert response.headers.get("etag")
 
 
 def test_sub_project_pytest_json(client: TestClient):
