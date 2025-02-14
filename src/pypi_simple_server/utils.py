@@ -8,10 +8,7 @@ from pathlib import Path
 from anyio import to_thread
 from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
-from httpx._api import head
 from starlette.status import HTTP_304_NOT_MODIFIED, HTTP_412_PRECONDITION_FAILED
-
-from .config import settings
 
 
 @dataclass
@@ -25,7 +22,7 @@ class FileMTimeWatcher:
 
     async def run(self):
         while True:
-            stat = await to_thread.run_sync(settings.database_file.stat)
+            stat = await to_thread.run_sync(self.file.stat)
             self.mtime = stat.st_mtime
             await asyncio.sleep(self.polling_interval)
 

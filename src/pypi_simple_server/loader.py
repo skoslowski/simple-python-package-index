@@ -1,6 +1,9 @@
 import hashlib
 import logging
 import os
+from collections.abc import Iterator
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from tarfile import TarFile
 from zipfile import ZipFile
@@ -12,11 +15,9 @@ from packaging.utils import (
     parse_sdist_filename,
     parse_wheel_filename,
 )
-from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlmodel import Session, select
 
-from .config import settings
-from .database import Distribution
+from .database import Distribution, Project, get_one_or_create
 
 logger = logging.getLogger(__name__)
 
@@ -63,57 +64,80 @@ def _get_file_hashes(filename: Path, blocksize: int = 2 << 13) -> dict[str, str]
     return {hash_obj.name: hash_obj.hexdigest()}
 
 
-def _read_project_file(file: Path, url: str) -> Distribution:
-    metadata_content = read_project_metadata(file)
+@dataclass
+class ProjectFileReader:
+    files_dir: Path
+    cache_dir: Path
 
-    try:
-        metadata, _ = parse_email(metadata_content)
-        name = canonicalize_name(metadata["name"])  # type: ignore
-        version = canonicalize_version(metadata["version"])  # type: ignore
-    except Exception as e:
-        raise InvalidFileError from e
+    def iter_files(self) -> Iterator[tuple[str, Path]]:
+        for file in self.files_dir.rglob("*.*"):
+            index = file.relative_to(self.files_dir).parent.as_posix().removeprefix(".")
+            yield index, file
 
-    metadata_file = settings.cache_dir_.joinpath(file.relative_to(settings.base_dir)).with_name(
-        file.name + ".metadata"
-    )
-    metadata_file.parent.mkdir(parents=True, exist_ok=True)
-    metadata_file.write_bytes(metadata_content)
-    file_stat = file.stat()
-    os.utime(metadata_file, (file_stat.st_atime, file_stat.st_mtime))
-
-    return Distribution(
-        name=name,
-        version=version,
-        filename=file.name,
-        size=file.stat().st_size,
-        url=url,
-        hashes=_get_file_hashes(file),
-        requires_python=metadata.get("requires_python"),
-        core_metadata={"sha256": hashlib.sha256(metadata_content).hexdigest()},
-    )
-
-
-def update_db(session: Session) -> None:
-    for file in settings.base_dir.rglob("*.*"):
-        url = file.relative_to(settings.base_dir).as_posix()
+    def read(self, file: Path, index: str) -> tuple[str, Distribution]:
+        metadata_content = read_project_metadata(file)
 
         try:
-            query = select(Distribution.id).where(Distribution.url == url)
-            session.exec(query).one()
-            continue
-        except NoResultFound:
-            pass
+            metadata, _ = parse_email(metadata_content)
+            name = canonicalize_name(metadata["name"])  # type: ignore
+            version = canonicalize_version(metadata["version"])  # type: ignore
+        except Exception as e:
+            raise InvalidFileError from e
 
+        dist = Distribution(
+            project_version=version,
+            filename=file.name,
+            size=file.stat().st_size,
+            url=f"{index}/{file.name}",
+            hashes=_get_file_hashes(file),
+            requires_python=metadata.get("requires_python"),
+            core_metadata={"sha256": hashlib.sha256(metadata_content).hexdigest()},
+        )
+
+        self.save_metadata(file, metadata_content)
+        return name, dist
+
+    def save_metadata(self, file: Path, metadata_content: bytes) -> None:
+        metadata_file = self.cache_dir.joinpath(file.relative_to(self.files_dir))
+        metadata_file = metadata_file.with_name(file.name + ".metadata")
+        metadata_file.parent.mkdir(parents=True, exist_ok=True)
+        metadata_file.write_bytes(metadata_content)
+        file_stat = file.stat()
+        os.utime(metadata_file, (file_stat.st_atime, file_stat.st_mtime))
+
+
+def update_db(session: Session, files_dir: Path, cache_dir: Path) -> None:
+    project_file_reader = ProjectFileReader(files_dir, cache_dir)
+
+    @lru_cache(maxsize=512)
+    def project_id(name: str, index: str) -> int:
+        project = get_one_or_create(
+            session,
+            query=select(Project).where(Project.index == index).where(Project.name == name),
+            factory=lambda: Project(index=index, name=name),
+        )
+        assert project.id is not None
+        return project.id
+
+    def create_project_and_distribution() -> Distribution:
+        project_name, distribution = project_file_reader.read(file, index)
+        distribution.project_id = project_id(project_name, index)
+        return distribution
+
+    for index, file in project_file_reader.iter_files():
         try:
-            dist = _read_project_file(file, url)
+            get_one_or_create(
+                session,
+                query=(
+                    select(Distribution.id)
+                    .where(Project.id == Distribution.project_id)
+                    .where(Project.index == index)
+                    .where(Distribution.filename == file.name)
+                ),
+                factory=create_project_and_distribution,
+            )
         except UnhandledFileTypeError:
             continue
         except InvalidFileError as e:
             logger.error(e)
             continue
-
-        try:
-            session.add(dist)
-            session.commit()
-        except IntegrityError:
-            session.rollback()

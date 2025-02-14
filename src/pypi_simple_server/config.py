@@ -18,5 +18,3 @@ class Settings(BaseSettings):
     @property
     def cache_dir_(self) -> Path:
         return self.cache_dir or self.base_dir / ".cache"
-
-settings = Settings()

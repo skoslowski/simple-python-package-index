@@ -4,7 +4,9 @@ from packaging.utils import NormalizedName
 from pydantic import BaseModel, Field
 
 # https://peps.python.org/pep-0508/#names
-ProjectName = Annotated[str, Field(pattern=r"^([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])$")]
+ProjectName = Annotated[
+    str, Field(pattern=r"^([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])$")
+]
 NormalizedProjectName = Annotated[NormalizedName, Field(pattern=r"^([0-9a-z]+-)*[0-9a-z]+$")]
 
 
@@ -31,9 +33,6 @@ class ProjectFile(BaseModel):
     # PEP-658, renamed from dist_info_metadata in PEP-714
     core_metadata: dict[str, str] | None = None
 
-    def __hash__(self) -> int:
-        return hash(self.filename)
-
 
 # Simple Detail page (/simple/$PROJECT/)
 class ProjectDetail[File](BaseModel):
@@ -46,23 +45,17 @@ class ProjectDetail[File](BaseModel):
     # PEP-503
     files: list[File] = list()
 
-    def __hash__(self) -> int:
-        return hash(self.name)
-
 
 class ProjectListEntry(BaseModel):
     # PEP-691
     name: ProjectName  # may be normalized
 
-    def __hash__(self) -> int:
-        return hash(self.name)
-
 
 # Simple Index page (/simple/)
-class ProjectList(BaseModel):
+class ProjectList[Project](BaseModel):
     """list of project names, a.k.a. project index - /simple/"""
 
     # PEP-629
     meta: Meta = Meta()
     # PEP-503
-    projects: list[ProjectListEntry] = []
+    projects: list[Project] = []
