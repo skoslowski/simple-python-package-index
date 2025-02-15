@@ -1,13 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8" />
     <meta name="pypi:repository-version" content="{{ model.meta.api_version }}" />
     <meta name="generator" content="{{ generator }}" />
     <title>Links for {{ model.name }}</title>
 </head>
-
 <body>
     <h1>Links for {{ model.name }}</h1>
     {%- for file in model.files %}
@@ -18,5 +16,4 @@
     >{{ file.filename }}</a><br />
     {%- endfor %}
 </body>
-
 </html>

@@ -6,13 +6,14 @@ from typing import Annotated
 
 from anyio import to_thread
 from fastapi import Depends, FastAPI, Request
+from fastapi import Path as PathParam
 from fastapi.exceptions import HTTPException
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from packaging.utils import canonicalize_name
 from sqlmodel import Session
-from starlette.status import HTTP_404_NOT_FOUND, HTTP_406_NOT_ACCEPTABLE
+from starlette.status import HTTP_404_NOT_FOUND, HTTP_406_NOT_ACCEPTABLE, HTTP_200_OK
 
 from .config import Settings
 from .database import (
@@ -60,7 +61,11 @@ def get_session():
 SessionDep = Annotated[Session, Depends(get_session)]
 
 
-app = FastAPI(title=__package__ or "", version=version(__package__ or ""), lifespan=lifespan)
+app = FastAPI(
+    title="Python Package Index Simple-API Server",
+    version=version(__package__ or ""),
+    lifespan=lifespan,
+)
 
 
 @app.get("/ping")
@@ -81,36 +86,13 @@ def index_get(path: str, summary: str):
         response_class=SimpleV1JSONResponse,
         response_model=ProjectList[ProjectListEntry],
         response_model_exclude_none=True,
+        responses={
+            HTTP_200_OK: {
+                "content": {MediaType.HTML_V1: {}},
+                "description": "Project Index either as HTML or JSON",
+            }
+        },
     )
-
-
-@index_get("/simple/", summary="Root Project Index")
-@index_get("/{index}/simple/", summary="Namespace Project Index")
-async def index(
-    request: Request,
-    media_type: ResponseMediaTypeDep,
-    session: SessionDep,
-    etag: ETagDep,
-    index: str | None = None,
-):
-    project_list = await to_thread.run_sync(get_project_list, session, index)
-
-    if not project_list.projects:
-        raise HTTPException(HTTP_404_NOT_FOUND, detail="Can't find this index")
-
-    match media_type:
-        case MediaType.JSON_V1:
-            return project_list
-        case MediaType.HTML_V1:
-            return templates.TemplateResponse(
-                request,
-                name="index.html",
-                context={"model": project_list, "generator": f"{app.title} v{app.version}"},
-                media_type=media_type,
-                headers={"etag": etag} if etag else None,
-            )
-
-    raise HTTPException(HTTP_406_NOT_ACCEPTABLE)
 
 
 def detail_get(path: str, summary: str):
@@ -120,18 +102,63 @@ def detail_get(path: str, summary: str):
         response_class=SimpleV1JSONResponse,
         response_model=ProjectDetail[ProjectFile],
         response_model_exclude_none=True,
+        responses={
+            HTTP_200_OK: {
+                "content": {MediaType.HTML_V1: {}},
+                "description": "Project Index either as HTML or JSON",
+            }
+        },
     )
 
 
+IndexParam = PathParam(description="Name of a sub-index. Allows creating package namespace", examples=["sub"])
+ProjectParam = PathParam(description="Name of the project to show details for.", examples=["pytest"])
+
+
+@index_get("/simple/", summary="Project Index")
+async def index_root(request: Request, media_type: ResponseMediaTypeDep, session: SessionDep, etag: ETagDep):
+    return await index(request, media_type, session, etag, index=None)
+
+
 @detail_get("/simple/{project}/", summary="Root Project Detail")
+async def project_detail_root(
+    request: Request, media_type: ResponseMediaTypeDep, session: SessionDep, etag: ETagDep, project: str
+):
+    return await project_detail(request, media_type, session, etag, project, index=None)
+
+
+@index_get("/{index}/simple/", summary="Namespaced Project Index")
+async def index(
+    request: Request,
+    media_type: ResponseMediaTypeDep,
+    session: SessionDep,
+    etag: ETagDep,
+    index: str | None = IndexParam,
+):
+    project_list = await to_thread.run_sync(get_project_list, session, index)
+
+    if not project_list.projects:
+        raise HTTPException(HTTP_404_NOT_FOUND, detail="Can't find this index")
+
+    if media_type == MediaType.HTML_V1:
+        return templates.TemplateResponse(
+            request,
+            name="index.html",
+            context={"model": project_list, "generator": f"{app.title} v{app.version}"},
+            media_type=media_type,
+            headers={"etag": etag} if etag else None,
+        )
+    return project_list
+
+
 @detail_get("/{index}/simple/{project}/", summary="Namespaced Project Detail")
 async def project_detail(
     request: Request,
     media_type: ResponseMediaTypeDep,
     session: SessionDep,
     etag: ETagDep,
-    project: str,
-    index: str = "",
+    project: str = ProjectParam,
+    index: str | None = IndexParam,
 ):
     project_canonical = canonicalize_name(project)
     if project != project_canonical:
@@ -143,22 +170,18 @@ async def project_detail(
     project_details = await to_thread.run_sync(get_project_detail, session, project_canonical, index)
     for project_file in project_details.files:
         project_file.url = str(request.url_for("files", path=project_file.url))
-
     if not project_details.files:
         raise HTTPException(HTTP_404_NOT_FOUND, detail="Can't find this project")
 
-    match media_type:
-        case MediaType.JSON_V1:
-            return project_details
-        case MediaType.HTML_V1:
-            return templates.TemplateResponse(
-                request=request,
-                name="detail.html",
-                context={"model": project_details, "generator": f"{app.title} v{app.version}"},
-                media_type=media_type,
-                headers={"etag": etag} if etag else None,
-            )
-    raise HTTPException(HTTP_406_NOT_ACCEPTABLE)
+    if media_type == MediaType.HTML_V1:
+        return templates.TemplateResponse(
+            request=request,
+            name="detail.html",
+            context={"model": project_details, "generator": f"{app.title} v{app.version}"},
+            media_type=media_type,
+            headers={"etag": etag} if etag else None,
+        )
+    return project_details
 
 
 staticfiles = StaticFiles()

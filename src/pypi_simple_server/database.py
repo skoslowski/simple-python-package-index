@@ -50,7 +50,6 @@ def get_project_list(session: Session, index: str | None) -> ProjectList[dict]:
 def get_project_detail(
     session: Session, project: NormalizedProjectName, index: str | None
 ) -> ProjectDetail[Distribution]:
-
     query = (
         select(Distribution)
         .where(Project.id == Distribution.project_id)
@@ -59,15 +58,14 @@ def get_project_detail(
     )
     if index:
         query = query.where(Project.index == index)
-    results = session.exec(query)
 
     files = []
+    files_seen = set()
     versions = set()
-    seen = set()
-    for distribution in results:
-        if distribution.filename in seen:
+    for distribution in session.exec(query):
+        if distribution.filename in files_seen:
             continue
-        seen.add(distribution.filename)
+        files_seen.add(distribution.filename)
         versions.add(distribution.project_version)
         files.append(distribution)
     return ProjectDetail(name=project, versions=sorted(versions), files=files)
