@@ -52,5 +52,5 @@ class Etag:
 def etag_gen(request: Request) -> str | None:
     return getattr(request.state, "etag_gen", lambda: None)()
 
-
+ETagDepends = Depends(Etag(etag_gen))
 ETagDep = Annotated[str, Depends(Etag(etag_gen))]

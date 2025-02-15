@@ -17,7 +17,8 @@ from packaging.utils import (
 )
 from sqlmodel import Session, select
 
-from .database import Distribution, Project, get_one_or_create
+from .database import get_one_or_create
+from .models import ProjectDB, ProjectFileDB
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ class ProjectFileReader:
             index = file.relative_to(self.files_dir).parent.as_posix().removeprefix(".")
             yield index, file
 
-    def read(self, file: Path, index: str) -> tuple[str, Distribution]:
+    def read(self, file: Path, index: str) -> tuple[str, ProjectFileDB]:
         metadata_content = read_project_metadata(file)
 
         try:
@@ -84,7 +85,7 @@ class ProjectFileReader:
         except Exception as e:
             raise InvalidFileError from e
 
-        dist = Distribution(
+        dist = ProjectFileDB(
             project_version=version,
             filename=file.name,
             size=file.stat().st_size,
@@ -113,13 +114,13 @@ def update_db(session: Session, files_dir: Path, cache_dir: Path) -> None:
     def project_id(name: str, index: str) -> int:
         project = get_one_or_create(
             session,
-            query=select(Project).where(Project.index == index).where(Project.name == name),
-            factory=lambda: Project(index=index, name=name),
+            query=select(ProjectDB).where(ProjectDB.index == index).where(ProjectDB.name == name),
+            factory=lambda: ProjectDB(index=index, name=name),
         )
         assert project.id is not None
         return project.id
 
-    def create_project_and_distribution() -> Distribution:
+    def create_project_and_distribution() -> ProjectFileDB:
         project_name, distribution = project_file_reader.read(file, index)
         distribution.project_id = project_id(project_name, index)
         return distribution
@@ -129,10 +130,10 @@ def update_db(session: Session, files_dir: Path, cache_dir: Path) -> None:
             get_one_or_create(
                 session,
                 query=(
-                    select(Distribution.id)
-                    .where(Project.id == Distribution.project_id)
-                    .where(Project.index == index)
-                    .where(Distribution.filename == file.name)
+                    select(ProjectFileDB.id)
+                    .where(ProjectDB.id == ProjectFileDB.project_id)
+                    .where(ProjectDB.index == index)
+                    .where(ProjectFileDB.filename == file.name)
                 ),
                 factory=create_project_and_distribution,
             )

@@ -1,73 +1,37 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
+from packaging.utils import NormalizedName
 from sqlalchemy.exc import IntegrityError, NoResultFound
-from sqlmodel import JSON, Column, Field, Session, SQLModel, select
+from sqlmodel import Session, SQLModel, select
 from sqlmodel import create_engine as create_engine
 
-from .models import NormalizedProjectName, ProjectDetail, ProjectList
+from .models import ProjectDB, ProjectDetail, ProjectFileDB, ProjectList
 
 
 def create_db_and_tables(engine):
     SQLModel.metadata.create_all(engine)
 
 
-class Project(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    index: str = Field(index=True)
-    name: str
-
-
-class Distribution(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-
-    project_id: int | None = Field(default=None, foreign_key="project.id")
-    project_version: str
-
-    # PEP-503
-    filename: str
-    # PEP-700
-    size: int
-    # PEP-503
-    url: str
-    # Limited to a len() of 1 in HTML
-    hashes: dict[str, str] = Field(sa_column=Column(JSON))
-    # PEP-503 (updated)
-    requires_python: str | None = None
-    # PEP-592
-    yanked: str | None = None
-    # PEP-658, renamed from dist_info_metadata in PEP-714
-    core_metadata: dict[str, str] | None = Field(sa_column=Column(JSON))
-
-
-def get_project_list(session: Session, index: str | None) -> ProjectList[dict]:
-    query = select(Project.name).distinct().order_by(Project.name)
+def get_project_list(session: Session, index: str | None) -> ProjectList:
+    query = select(ProjectDB).distinct().order_by(ProjectDB.name)
     if index:
-        query = query.where(Project.index == index)
-    return ProjectList(projects=[{"name": name} for name in session.exec(query)])
+        query = query.where(ProjectDB.index == index)
+    return ProjectList(projects=unique_on(session.exec(query), "name"))
 
 
-def get_project_detail(
-    session: Session, project: NormalizedProjectName, index: str | None
-) -> ProjectDetail[Distribution]:
+def get_project_detail(session: Session, project: NormalizedName, index: str | None) -> ProjectDetail:
     query = (
-        select(Distribution)
-        .where(Project.id == Distribution.project_id)
-        .where(Project.name == project)
-        .order_by(Distribution.filename)
+        select(ProjectFileDB)
+        .where(ProjectDB.id == ProjectFileDB.project_id)
+        .where(ProjectDB.name == project)
+        .order_by(ProjectFileDB.filename)
     )
     if index:
-        query = query.where(Project.index == index)
+        query = query.where(ProjectDB.index == index)
 
-    files = []
-    files_seen = set()
-    versions = set()
-    for distribution in session.exec(query):
-        if distribution.filename in files_seen:
-            continue
-        files_seen.add(distribution.filename)
-        versions.add(distribution.project_version)
-        files.append(distribution)
+    files = unique_on(session.exec(query), "filename")
+    versions = {file.project_version for file in files}
     return ProjectDetail(name=project, versions=sorted(versions), files=files)
 
 
@@ -88,3 +52,8 @@ def get_one_or_create[T](session: Session, query: Any, factory: Callable[[], T])
 
     session.refresh(created)
     return created
+
+
+def unique_on[T](iter: Iterable[T], attr: str) -> list[T]:
+    seen = set()
+    return [e for e in iter if (u := getattr(e, attr)) not in seen and not seen.add(u)]

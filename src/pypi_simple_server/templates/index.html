@@ -1,14 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8" />
     <meta name="pypi:repository-version" content="{{ model.meta.api_version }}" />
-    <meta name="generator" content="{{ generator }}" />
-    <title>Simple Python Package Index Server</title>
+    <title>Simple Index</title>
 </head>
 <body>
     {%- for project in model.projects %}
-    <a href="{{ project.name }}">{{ project.name }}</a>
+    <a href="{{ project.name }}/">{{ project.name }}</a>
     {%- endfor %}
 </body>
 </html>

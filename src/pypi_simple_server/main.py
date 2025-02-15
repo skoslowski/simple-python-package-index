@@ -5,7 +5,7 @@ from importlib.metadata import version
 from typing import Annotated
 
 from anyio import to_thread
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi import Path as PathParam
 from fastapi.exceptions import HTTPException
 from fastapi.responses import PlainTextResponse, RedirectResponse
@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from packaging.utils import canonicalize_name
 from sqlmodel import Session
-from starlette.status import HTTP_404_NOT_FOUND, HTTP_406_NOT_ACCEPTABLE, HTTP_200_OK
+from starlette.status import HTTP_200_OK, HTTP_404_NOT_FOUND
 
 from .config import Settings
 from .database import (
@@ -23,9 +23,9 @@ from .database import (
     get_project_list,
 )
 from .dependencies.content_negotiation import MediaType, ResponseMediaTypeDep, SimpleV1JSONResponse
-from .dependencies.etag import ETagDep
+from .dependencies.etag import ETagDepends
 from .loader import update_db
-from .models import ProjectDetail, ProjectFile, ProjectList, ProjectListEntry
+from .models import ProjectDetail, ProjectList
 from .templates import jinja_env
 from .utils import FileMTimeWatcher
 
@@ -68,9 +68,9 @@ app = FastAPI(
 )
 
 
-@app.get("/ping")
+@app.get("/ping", response_class=PlainTextResponse)
 async def ping():
-    return {}  # docker health-check
+    return  # docker health-check
 
 
 @app.get("/reload", response_class=PlainTextResponse)
@@ -82,10 +82,11 @@ async def reload_index_data(session: SessionDep):
 def index_get(path: str, summary: str):
     return app.get(
         path,
-        summary=summary,
+        dependencies=[ETagDepends],
         response_class=SimpleV1JSONResponse,
-        response_model=ProjectList[ProjectListEntry],
+        response_model=ProjectList,
         response_model_exclude_none=True,
+        summary=summary,
         responses={
             HTTP_200_OK: {
                 "content": {MediaType.HTML_V1: {}},
@@ -98,10 +99,11 @@ def index_get(path: str, summary: str):
 def detail_get(path: str, summary: str):
     return app.get(
         path,
-        summary=summary,
+        dependencies=[ETagDepends],
         response_class=SimpleV1JSONResponse,
-        response_model=ProjectDetail[ProjectFile],
+        response_model=ProjectDetail,
         response_model_exclude_none=True,
+        summary=summary,
         responses={
             HTTP_200_OK: {
                 "content": {MediaType.HTML_V1: {}},
@@ -116,23 +118,29 @@ ProjectParam = PathParam(description="Name of the project to show details for.",
 
 
 @index_get("/simple/", summary="Project Index")
-async def index_root(request: Request, media_type: ResponseMediaTypeDep, session: SessionDep, etag: ETagDep):
-    return await index(request, media_type, session, etag, index=None)
+async def index_root(
+    request: Request, response: Response, media_type: ResponseMediaTypeDep, session: SessionDep
+):
+    return await index(request, response, media_type, session, index=None)
 
 
 @detail_get("/simple/{project}/", summary="Root Project Detail")
 async def project_detail_root(
-    request: Request, media_type: ResponseMediaTypeDep, session: SessionDep, etag: ETagDep, project: str
+    request: Request,
+    response: Response,
+    media_type: ResponseMediaTypeDep,
+    session: SessionDep,
+    project: str,
 ):
-    return await project_detail(request, media_type, session, etag, project, index=None)
+    return await project_detail(request, response, media_type, session, project, index=None)
 
 
 @index_get("/{index}/simple/", summary="Namespaced Project Index")
 async def index(
     request: Request,
+    response: Response,
     media_type: ResponseMediaTypeDep,
     session: SessionDep,
-    etag: ETagDep,
     index: str | None = IndexParam,
 ):
     project_list = await to_thread.run_sync(get_project_list, session, index)
@@ -144,9 +152,9 @@ async def index(
         return templates.TemplateResponse(
             request,
             name="index.html",
-            context={"model": project_list, "generator": f"{app.title} v{app.version}"},
+            context={"model": project_list},
             media_type=media_type,
-            headers={"etag": etag} if etag else None,
+            headers=response.headers,
         )
     return project_list
 
@@ -154,9 +162,9 @@ async def index(
 @detail_get("/{index}/simple/{project}/", summary="Namespaced Project Detail")
 async def project_detail(
     request: Request,
+    response: Response,
     media_type: ResponseMediaTypeDep,
     session: SessionDep,
-    etag: ETagDep,
     project: str = ProjectParam,
     index: str | None = IndexParam,
 ):
@@ -177,9 +185,9 @@ async def project_detail(
         return templates.TemplateResponse(
             request=request,
             name="detail.html",
-            context={"model": project_details, "generator": f"{app.title} v{app.version}"},
+            context={"model": project_details},
             media_type=media_type,
-            headers={"etag": etag} if etag else None,
+            headers=response.headers,
         )
     return project_details
 

@@ -58,28 +58,25 @@ def client(test_files) -> Iterator[TestClient]:
 def test_ping(client: TestClient):
     response = client.get("/ping")
     assert response.status_code == 200
-    assert response.json() == {}
 
 
 def test_root_index_html(client: TestClient):
     response = client.get("/simple/")
     assert response.status_code == 200
     assert response.headers.get("content-type") == "application/vnd.pypi.simple.v1+html"
-    generator = f"{getattr(client.app, "title")} v{getattr(client.app, "version")}"
-    expected = f"""
+    expected = """
         <!DOCTYPE html>
-        <html lang="en">
+        <html>
         <head>
             <meta charset="UTF-8" />
             <meta name="pypi:repository-version" content="1.1" />
-            <meta name="generator" content="{generator}" />
-            <title>Simple Python Package Index Server</title>
+            <title>Simple Index</title>
         </head>
         <body>
-            <a href="iniconfig">iniconfig</a>
-            <a href="packaging">packaging</a>
-            <a href="pluggy">pluggy</a>
-            <a href="pytest">pytest</a>
+            <a href="iniconfig/">iniconfig</a>
+            <a href="packaging/">packaging</a>
+            <a href="pluggy/">pluggy</a>
+            <a href="pytest/">pytest</a>
         </body>
         </html>
     """
@@ -90,14 +87,12 @@ def test_root_project_pytest_html(client: TestClient):
     response = client.get("/simple/pytest/")
     assert response.status_code == 200
     assert response.headers.get("content-type") == "application/vnd.pypi.simple.v1+html"
-    generator = f"{getattr(client.app, "title")} v{getattr(client.app, "version")}"
-    expected = f"""
+    expected = """
         <!DOCTYPE html>
-        <html lang="en">
+        <html>
         <head>
             <meta charset="UTF-8" />
             <meta name="pypi:repository-version" content="1.1" />
-            <meta name="generator" content="{generator}" />
             <title>Links for pytest</title>
         </head>
         <body>
@@ -110,6 +105,7 @@ def test_root_project_pytest_html(client: TestClient):
     """
     assert response.text == dedent(expected).strip()
     assert response.headers.get("etag")
+
 
 def test_root_index_json(client: TestClient):
     response = client.get("/simple/", headers={"Accept": "application/vnd.pypi.simple.latest+json"})
