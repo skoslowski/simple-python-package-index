@@ -20,15 +20,18 @@ class MediaType(StrEnum):
     JSON_V1 = "application/vnd.pypi.simple.v1+json"
     HTML_V1 = "application/vnd.pypi.simple.v1+html"
 
+    JSON_LATEST = "application/vnd.pypi.simple.latest+json"
+    HTML_LATEST = "application/vnd.pypi.simple.latest+html"
+
 
 _ACCEPTABLE = {
     MediaType.JSON_V1: {
+        MediaType.JSON_LATEST,
         MediaType.JSON_V1,
-        "application/vnd.pypi.simple.latest+json",
     },
     MediaType.HTML_V1: {
+        MediaType.HTML_LATEST,
         MediaType.HTML_V1,
-        "application/vnd.pypi.simple.latest+html",
         "text/html",
         "*/*",
     },
@@ -66,7 +69,6 @@ def get_response(
     model: msgspec.Struct,
     template: str,
 ) -> Response:
-
     media_type = get_response_media_type(request)
 
     if media_type == MediaType.HTML_V1:
