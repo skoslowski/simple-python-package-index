@@ -21,11 +21,11 @@ from .models import ProjectFile
 logger = logging.getLogger(__name__)
 
 
-class LoaderError(Exception):
+class ProjectReaderError(Exception):
     pass
 
 
-class UnhandledFileTypeError(LoaderError):
+class UnhandledFileTypeError(ProjectReaderError):
     pass
 
 
@@ -42,7 +42,7 @@ def read_project_metadata(file: Path) -> bytes:
         with ZipFile(file) as zip, zip.open(f"{subdir}/METADATA") as fp:
             return fp.read()
 
-    elif file.suffixes[-2:] == [".tar", ".gz"]:
+    elif file.name.endswith(".tar.gz"):
         parse_sdist_filename(file.name)
         # https://packaging.python.org/en/latest/specifications/source-distribution-format/
         subdir = file.name.removesuffix(".tar.gz")
@@ -70,21 +70,21 @@ class ProjectFileReader:
 
     def iter_files(self) -> Iterator[tuple[str, Path]]:
         for root, _, files in os.walk(self.files_dir):
-            if root == self.cache_dir:
-                continue
             root_dir = Path(root)
+            if root_dir == self.cache_dir:
+                continue
             index = f"{root_dir.relative_to(self.files_dir).as_posix()}/".lstrip(".")
-            print(index)
             for file in files:
                 yield index, root_dir / file
 
     def read(self, file: Path) -> tuple[NormalizedName, str, ProjectFile]:
-        metadata_content = read_project_metadata(file)
-
         try:
+            metadata_content = read_project_metadata(file)
             metadata, _ = parse_email(metadata_content)
             name = canonicalize_name(metadata["name"])  # type: ignore
             version = canonicalize_version(metadata["version"])  # type: ignore
+        except ProjectReaderError:
+            raise
         except Exception as e:
             raise InvalidFileError from e
 

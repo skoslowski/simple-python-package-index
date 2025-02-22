@@ -38,9 +38,6 @@ class ProjectFile(Struct, omit_defaults=True):
     # PEP-658, renamed from dist_info_metadata in PEP-714
     core_metadata: dict[str, str] | None = None
 
-    def __hash__(self) -> int:
-        return hash(self.filename)
-
 
 class ProjectDetail(Struct, kw_only=True):
     """details on project - /simple/$NORM_NAME/"""
@@ -58,9 +55,6 @@ class ProjectDetail(Struct, kw_only=True):
 class Project(Struct):
     # PEP-691
     name: ProjectName  # may be normalized
-
-    def __hash__(self) -> int:
-        return hash(self.name)
 
 
 class ProjectList(Struct):

@@ -37,11 +37,13 @@ sources = ["src"]
 dev = [
     "httpx>=0.28.1",
     "pypi-simple>=1.6.1",
+    "pytest-cov>=6.0.0",
     "pytest>=8.3.4",
     "ruff>=0.9.6",
 ]
 
 [tool.pytest.ini_options]
+addopts = "--cov=pypi_simple_server"
 testpaths = [
     "tests",
 ]

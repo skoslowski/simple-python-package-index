@@ -9,8 +9,8 @@ from pypi_simple_server.endpoint_utils import MediaType
 
 @pytest.mark.parametrize("content_type", {"", "*/*", "text/html", MediaType.HTML_LATEST, MediaType.HTML_V1})
 def test_content_type(client: TestClient, content_type: str):
-    headers = {"content-type": content_type} if content_type else {}
-    response = client.get("/simple/", headers=headers)
+    headers = {"Accept": content_type} if content_type else {}
+    response = client.head("/simple/", headers=headers)
     assert response.headers.get("content-type") == MediaType.HTML_V1
     assert response.status_code == HTTP_200_OK
 

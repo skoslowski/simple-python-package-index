@@ -5,8 +5,6 @@ import pytest
 from pypi_simple import PyPISimple
 from starlette.testclient import TestClient
 
-from pypi_simple_server.endpoint_utils import MediaType
-
 FILES_REQUIRED = [
     "pytest-8.3.4-py3-none-any.whl",
     "pytest-8.3.4.tar.gz",
@@ -47,19 +45,19 @@ def test_files():
         files_missing.setdefault(project, []).append(FILES_DIR / file)
     if files_missing:
         download(files_missing)
+    FILES_DIR.joinpath("not-a-dist.txt").touch()
+    FILES_DIR.joinpath("invalid-dist.tar.gz").touch()
 
 
 @pytest.fixture(scope="session")
-def client(test_files) -> Iterator[TestClient]:
+def client(test_files, tmp_path_factory: pytest.TempPathFactory) -> Iterator[TestClient]:
+    from pypi_simple_server import config
+
+    config.CACHE_DIR, orig = tmp_path_factory.mktemp("cache_dir"), config.CACHE_DIR
+
     from pypi_simple_server.main import app
 
     with TestClient(app, root_path="/pypi") as client:
         yield client
 
-
-@pytest.fixture(scope="session")
-def json_client(test_files) -> Iterator[TestClient]:
-    from pypi_simple_server.main import app
-
-    with TestClient(app, root_path="/pypi", headers={"content-type": MediaType.JSON_V1}) as c:
-        yield c
+    config.CACHE_DIR = orig

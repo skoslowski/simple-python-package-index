@@ -1,23 +1,42 @@
 import pytest
-from starlette.status import HTTP_200_OK, HTTP_301_MOVED_PERMANENTLY, HTTP_404_NOT_FOUND
+from starlette.status import (
+    HTTP_200_OK,
+    HTTP_301_MOVED_PERMANENTLY,
+    HTTP_304_NOT_MODIFIED,
+    HTTP_404_NOT_FOUND,
+    HTTP_406_NOT_ACCEPTABLE,
+    HTTP_412_PRECONDITION_FAILED,
+)
 from starlette.testclient import TestClient
+
+from pypi_simple_server.endpoint_utils import MediaType
 
 
 def test_redirect_url(client: TestClient):
-    response = client.get("/simple", follow_redirects=False)
-    assert response.is_redirect
+    r = client.head("/simple", follow_redirects=False)
+    assert r.is_redirect
 
 
 def test_redirect_name(client: TestClient):
-    response = client.get("/simple/PyTest/", follow_redirects=False)
-    assert response.status_code == HTTP_301_MOVED_PERMANENTLY
-    assert response.headers["Location"] == "/simple/pytest/"
+    r = client.head("/simple/PyTest/", follow_redirects=False)
+    assert r.status_code, r.headers["Location"] == (HTTP_301_MOVED_PERMANENTLY, "/simple/pytest/")
+
+
+@pytest.mark.parametrize("content_type", {MediaType.JSON_LATEST, MediaType.JSON_V1})
+def test_content_type(client: TestClient, content_type: str):
+    r = client.head("/simple/", headers={"Accept": content_type})
+    assert r.status_code, r.headers.get("content-type") == (HTTP_200_OK, MediaType.JSON_V1)
+
+
+def test_content_type_invalid(client: TestClient):
+    r = client.head("/simple/", headers={"Accept": MediaType.JSON_V1.value.replace("v1", "v0")})
+    assert r.status_code == HTTP_406_NOT_ACCEPTABLE
 
 
 def test_root_index(client: TestClient):
-    response = client.get("/simple/", headers={"Accept": "application/vnd.pypi.simple.latest+json"})
-    assert response.status_code == HTTP_200_OK
-    assert response.headers.get("content-type") == "application/vnd.pypi.simple.v1+json"
+    r = client.get("/simple/", headers={"Accept": MediaType.JSON_V1})
+    assert r.status_code == HTTP_200_OK
+    assert r.headers.get("content-type") == "application/vnd.pypi.simple.v1+json"
     expected = {
         "meta": {"api_version": "1.1"},
         "projects": [
@@ -27,14 +46,13 @@ def test_root_index(client: TestClient):
             {"name": "pytest"},
         ],
     }
-    assert response.json() == expected
-    assert response.headers.get("etag")
+    assert r.json() == expected
 
 
-def test_root_project_pytest(client: TestClient):
-    response = client.get("/simple/pytest/", headers={"Accept": "application/vnd.pypi.simple.latest+json"})
-    assert response.status_code == HTTP_200_OK
-    assert response.headers.get("content-type") == "application/vnd.pypi.simple.v1+json"
+def test_root_project(client: TestClient):
+    r = client.get("/simple/pytest/", headers={"Accept": MediaType.JSON_V1})
+    assert r.status_code == HTTP_200_OK
+    assert r.headers.get("content-type") == "application/vnd.pypi.simple.v1+json"
     expected = {
         "meta": {"api_version": "1.1"},
         "name": "pytest",
@@ -72,29 +90,60 @@ def test_root_project_pytest(client: TestClient):
             },
         ],
     }
-    assert response.json() == expected
-    assert response.headers.get("etag")
+    assert r.json() == expected
 
 
 def test_sub_index(client: TestClient):
-    response = client.get("/ext/simple/", headers={"Accept": "application/vnd.pypi.simple.latest+json"})
-    assert response.status_code == HTTP_200_OK
+    r = client.get("/ext/simple/", headers={"Accept": MediaType.JSON_V1})
+    assert r.status_code == HTTP_200_OK
 
-    projects = {p["name"] for p in response.json()["projects"]}
+    projects = {p["name"] for p in r.json()["projects"]}
     assert projects == {"iniconfig", "pluggy", "pytest"}
+
+
+def test_sub_project(client: TestClient):
+    r = client.get("/ext/simple/pytest/", headers={"Accept": MediaType.JSON_V1})
+    assert r.status_code == HTTP_200_OK
+
+    files = {f["filename"] for f in r.json()["files"]}
+    assert files == {"pytest-8.3.0-py3-none-any.whl"}
 
 
 @pytest.mark.parametrize("index", ["ex", "ext/foo"])
 def test_missing_sub_index(client: TestClient, index: str):
-    response = client.get("/{index}/simple/")
-    assert response.status_code == HTTP_404_NOT_FOUND
+    r = client.get("/{index}/simple/")
+    assert r.status_code == HTTP_404_NOT_FOUND
 
 
-def test_sub_project_pytest(client: TestClient):
-    response = client.get(
-        "/ext/simple/pytest/", headers={"Accept": "application/vnd.pypi.simple.latest+json"}
-    )
-    assert response.status_code == HTTP_200_OK
+def test_missing_project(client: TestClient):
+    r = client.get("/simple/uv/")
+    assert r.status_code == HTTP_404_NOT_FOUND
 
-    files = {f["filename"] for f in response.json()["files"]}
-    assert files == {"pytest-8.3.0-py3-none-any.whl"}
+
+@pytest.fixture(scope="module")
+def current_etag(client: TestClient):
+    r = client.head("/simple/", headers={"Accept": MediaType.JSON_V1})
+    etag = r.headers.get("etag")
+    assert r.status_code == HTTP_200_OK
+    assert etag
+    return etag
+
+
+def test_etag_if_none_match(client: TestClient, current_etag: str):
+    r = client.head("/simple/", headers={"Accept": MediaType.JSON_V1, "If-None-Match": current_etag})
+    assert r.status_code == HTTP_304_NOT_MODIFIED
+
+
+def test_etag_if_none_match_outdated(client: TestClient):
+    r = client.head("/simple/", headers={"Accept": MediaType.JSON_V1, "If-None-Match": "XXX"})
+    assert r.status_code == HTTP_200_OK
+
+
+def test_etag_if_match(client: TestClient, current_etag: str):
+    r = client.head("/simple/", headers={"Accept": MediaType.JSON_V1, "If-Match": current_etag})
+    assert r.status_code == HTTP_200_OK
+
+
+def test_etag_if_match_outdated(client: TestClient):
+    r = client.head("/simple/", headers={"Accept": MediaType.JSON_V1, "If-Match": "XXX"})
+    assert r.status_code == HTTP_412_PRECONDITION_FAILED
