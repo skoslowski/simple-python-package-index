@@ -55,8 +55,8 @@ STORE_DIST = """
     INSERT INTO Distribution VALUES (?, ?, ?, ?, ?)
 """
 
-sqlite3.register_adapter(ProjectFile, msgspec.json.Encoder().encode)
-sqlite3.register_converter("ProjectFile", msgspec.json.Decoder(ProjectFile).decode)
+sqlite3.register_adapter(ProjectFile, msgspec.msgpack.Encoder().encode)
+sqlite3.register_converter("ProjectFile", msgspec.msgpack.Decoder(ProjectFile).decode)
 
 
 class Stats(msgspec.Struct, frozen=True):
@@ -67,8 +67,8 @@ class Stats(msgspec.Struct, frozen=True):
     def __getitem__(self, index: int | slice) -> int | tuple[int, ...]:
         return msgspec.structs.astuple(self)[index]
 
-    def __len__(self) -> int:
-        return len(msgspec.structs.fields(self))
+    # def __len__(self) -> int:
+    #     return len(msgspec.structs.fields(self))
 
 
 @dataclass
