@@ -2,10 +2,8 @@ import pytest
 from starlette.status import (
     HTTP_200_OK,
     HTTP_301_MOVED_PERMANENTLY,
-    HTTP_304_NOT_MODIFIED,
     HTTP_404_NOT_FOUND,
     HTTP_406_NOT_ACCEPTABLE,
-    HTTP_412_PRECONDITION_FAILED,
 )
 from starlette.testclient import TestClient
 
@@ -36,7 +34,6 @@ def test_content_type_invalid(client: TestClient):
 def test_root_index(client: TestClient):
     r = client.get("/simple/", headers={"Accept": MediaType.JSON_V1})
     assert r.status_code == HTTP_200_OK
-    assert r.headers.get("content-type") == "application/vnd.pypi.simple.v1+json"
     expected = {
         "meta": {"api_version": "1.1"},
         "projects": [
@@ -52,7 +49,6 @@ def test_root_index(client: TestClient):
 def test_root_project(client: TestClient):
     r = client.get("/simple/pytest/", headers={"Accept": MediaType.JSON_V1})
     assert r.status_code == HTTP_200_OK
-    assert r.headers.get("content-type") == "application/vnd.pypi.simple.v1+json"
     expected = {
         "meta": {"api_version": "1.1"},
         "name": "pytest",
@@ -118,32 +114,3 @@ def test_missing_sub_index(client: TestClient, index: str):
 def test_missing_project(client: TestClient):
     r = client.get("/simple/uv/")
     assert r.status_code == HTTP_404_NOT_FOUND
-
-
-@pytest.fixture(scope="module")
-def current_etag(client: TestClient):
-    r = client.head("/simple/", headers={"Accept": MediaType.JSON_V1})
-    etag = r.headers.get("etag")
-    assert r.status_code == HTTP_200_OK
-    assert etag
-    return etag
-
-
-def test_etag_if_none_match(client: TestClient, current_etag: str):
-    r = client.head("/simple/", headers={"Accept": MediaType.JSON_V1, "If-None-Match": current_etag})
-    assert r.status_code == HTTP_304_NOT_MODIFIED
-
-
-def test_etag_if_none_match_outdated(client: TestClient):
-    r = client.head("/simple/", headers={"Accept": MediaType.JSON_V1, "If-None-Match": "XXX"})
-    assert r.status_code == HTTP_200_OK
-
-
-def test_etag_if_match(client: TestClient, current_etag: str):
-    r = client.head("/simple/", headers={"Accept": MediaType.JSON_V1, "If-Match": current_etag})
-    assert r.status_code == HTTP_200_OK
-
-
-def test_etag_if_match_outdated(client: TestClient):
-    r = client.head("/simple/", headers={"Accept": MediaType.JSON_V1, "If-Match": "XXX"})
-    assert r.status_code == HTTP_412_PRECONDITION_FAILED

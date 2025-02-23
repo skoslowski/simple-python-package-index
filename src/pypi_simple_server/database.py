@@ -59,6 +59,18 @@ sqlite3.register_adapter(ProjectFile, msgspec.json.Encoder().encode)
 sqlite3.register_converter("ProjectFile", msgspec.json.Decoder(ProjectFile).decode)
 
 
+class Stats(msgspec.Struct, frozen=True):
+    distributions: int
+    projects: int
+    indexes: int
+
+    def __getitem__(self, index: int | slice) -> int | tuple[int, ...]:
+        return msgspec.structs.astuple(self)[index]
+
+    def __len__(self) -> int:
+        return len(msgspec.structs.fields(self))
+
+
 @dataclass
 class Database:
     files_dir: Path
@@ -80,9 +92,9 @@ class Database:
     def __exit__(self, *exc_info):
         self._connection.close()
 
-    def stats(self) -> tuple[int, int, int]:
+    def stats(self) -> Stats:
         with self._connection as cur:
-            return cur.execute(GET_STATS).fetchone()
+            return Stats(*cur.execute(GET_STATS).fetchone())
 
     def update(self) -> None:
         project_file_reader = ProjectFileReader(self.files_dir, self.cache_dir)

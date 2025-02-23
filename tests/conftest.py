@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from pypi_simple import PyPISimple
@@ -19,7 +20,22 @@ FILES_REQUIRED = [
     "ext/pluggy-1.5.0.tar.gz",
 ]
 
-FILES_DIR = Path(__file__).with_name("files")
+
+@pytest.fixture(scope="session")
+def file_path() -> Path:
+    download_dir = Path(__file__).with_name("files")
+    files_missing = {}
+    for entry in FILES_REQUIRED:
+        file = download_dir / entry
+        if file.exists():
+            continue
+        project = file.name.partition("-")[0]
+        files_missing.setdefault(project, []).append(download_dir / file)
+    if files_missing:
+        download(files_missing)
+    download_dir.joinpath("not-a-dist.txt").touch()
+    download_dir.joinpath("invalid-dist.tar.gz").touch()
+    return download_dir
 
 
 def download(files_missing: dict[str, list[Path]]) -> None:
@@ -35,29 +51,12 @@ def download(files_missing: dict[str, list[Path]]) -> None:
 
 
 @pytest.fixture(scope="session")
-def test_files():
-    files_missing = {}
-    for entry in FILES_REQUIRED:
-        file = FILES_DIR / entry
-        if file.exists():
-            continue
-        project = file.name.partition("-")[0]
-        files_missing.setdefault(project, []).append(FILES_DIR / file)
-    if files_missing:
-        download(files_missing)
-    FILES_DIR.joinpath("not-a-dist.txt").touch()
-    FILES_DIR.joinpath("invalid-dist.tar.gz").touch()
-
-
-@pytest.fixture(scope="session")
-def client(test_files, tmp_path_factory: pytest.TempPathFactory) -> Iterator[TestClient]:
+def client(file_path: Path, tmp_path_factory: pytest.TempPathFactory) -> Iterator[TestClient]:
     from pypi_simple_server import config
 
-    config.CACHE_DIR, orig = tmp_path_factory.mktemp("cache_dir"), config.CACHE_DIR
+    patch_config = mock.patch.object(config, "CACHE_DIR", tmp_path_factory.mktemp("cache"))
 
     from pypi_simple_server.main import app
 
-    with TestClient(app, root_path="/pypi") as client:
+    with patch_config, TestClient(app, root_path="/pypi") as client:
         yield client
-
-    config.CACHE_DIR = orig
